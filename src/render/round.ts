@@ -8,11 +8,18 @@ const names = (view: RoundView, state: 'given' | 'skipped' | 'pending'): string[
 const roundTitle = (view: RoundView, medNames: string[]): string =>
   `${view.emoji} ${esc(view.petName)} ${esc(lowerFirst(view.roundName))}: ${joinEsc(medNames, ' + ')}`;
 
-/** "✅ Given [late] by X at T [(logged T)]". */
+/** Everyone who logged this occurrence, oldest first, the newest logger last: "Rob", "Rob & Dani", "Rob, Kid & Dani". */
+function loggers(e: EntryView): string {
+  const names = [...(e.alsoBy ?? []), e.by].map((p) => esc(p.name));
+  return names.length < 2 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} & ${names[names.length - 1]}`;
+}
+
+/** "✅ Given [late] by X at T [(logged T)]"; with several people "✅ Given by X & Y, last at T". */
 export function givenHeader(e: EntryView, tz: string): string {
   const late = e.givenLate ? ' late' : '';
   const logged = e.backdated ? ` (logged ${fmtTime(e.loggedAt, tz)})` : '';
-  return `✅ Given${late} by ${esc(e.by.name)} at ${fmtTime(e.givenAt, tz)}${logged}`;
+  const when = e.alsoBy?.length ? `, last at ${fmtTime(e.givenAt, tz)}` : ` at ${fmtTime(e.givenAt, tz)}`;
+  return `✅ Given${late} by ${loggers(e)}${when}${logged}`;
 }
 
 function reminderForm(view: RoundView, msgId: number): Rendered {
@@ -30,11 +37,19 @@ function reminderForm(view: RoundView, msgId: number): Rendered {
 
 function recordForm(view: RoundView, msgId: number, tz: string): Rendered {
   const lines: string[] = [];
-  if (view.latest) lines.push(givenHeader(view.latest, tz));
   const given = names(view, 'given');
-  if (given.length) lines.push(`${view.emoji} ${esc(view.petName)} ${esc(lowerFirst(view.roundName))}: ${joinEsc(given, ', ')}`);
   const skipped = names(view, 'skipped');
-  if (skipped.length) lines.push(`⏭ Skipped: ${joinEsc(skipped, ', ')}`);
+  if (given.length) {
+    // Nothing given means no "✅ Given" header, even though an entry exists (e.g. an edit left only skips).
+    if (view.latest) lines.push(givenHeader(view.latest, tz));
+    lines.push(`${view.emoji} ${esc(view.petName)} ${esc(lowerFirst(view.roundName))}: ${joinEsc(given, ', ')}`);
+    if (skipped.length) lines.push(`⏭ Skipped: ${joinEsc(skipped, ', ')}`);
+  } else if (skipped.length) {
+    const by = view.latest ? ` by ${loggers(view.latest)}` : '';
+    lines.push(`⏭ Skipped${by}: ${joinEsc(skipped, ', ')}`);
+  } else {
+    lines.push('⏳ Nothing given yet');
+  }
   const left = names(view, 'pending');
   if (left.length) lines.push(`⏳ Still to give: ${joinEsc(left, ', ')}`);
   if (left.length && view.phase === 'late') lines.push('⚠️ LATE');

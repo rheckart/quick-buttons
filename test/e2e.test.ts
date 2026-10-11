@@ -64,7 +64,7 @@ describe('one realistic day (Sat 10 Oct 2026, America/New_York)', () => {
     h.clock.set('2026-10-10 09:10');
     await h.tap(followup, 'All given', DANI);
     expect(followup.deleted).toBe(true);
-    expect(morning.text).toBe('✅ Given by Danielle at 9:10\n☀️ Twiggy morning: Antibiotic, Eye drops');
+    expect(morning.text).toBe('✅ Given by Rob & Danielle, last at 9:10\n☀️ Twiggy morning: Antibiotic, Eye drops');
     expect(boardLabels()[0]).toBe('☀️ Morning · ✅ Danielle 9:10');
 
     // 10:00 passes: a finished round is never marked LATE

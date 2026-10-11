@@ -145,6 +145,16 @@ async function askDoubleDose(ctx: Ctx, snap: Snapshot, req: LogRequest, dose: Do
   return { toast: 'Already logged, please confirm below' };
 }
 
+/**
+ * A plain "now" log (given at the tap, within a minute) is given when the user confirms, not up to an hour
+ * earlier when they first tapped. An explicitly chosen time is kept.
+ */
+function confirmedGivenAt(stored: StoredRequest, prompt: BotMessage, now: Date): Date {
+  const givenAt = new Date(stored.givenAt);
+  const tappedAt = prompt.createdAt; // the prompt is posted in the same tap
+  return Math.abs(givenAt.getTime() - tappedAt.getTime()) <= 60_000 ? now : givenAt;
+}
+
 /** The answer to a double-dose prompt. The prompt is deleted either way. */
 export async function answerDoubleDose(ctx: Ctx, prompt: BotMessage, yes: boolean, now: Date): Promise<CallbackResult> {
   const stored = await ctx.repos.ui.get<StoredRequest>(ddKey(prompt.id));
@@ -153,6 +163,6 @@ export async function answerDoubleDose(ctx: Ctx, prompt: BotMessage, yes: boolea
   if (!stored) return { toast: 'That button is out of date' };
   if (!yes) return { toast: 'Cancelled' };
   const record = stored.recordM === null ? null : await ctx.repos.messages.get(stored.recordM);
-  await commitLog(ctx, { ...stored, givenAt: new Date(stored.givenAt), record }, now);
+  await commitLog(ctx, { ...stored, givenAt: confirmedGivenAt(stored, prompt, now), record }, now);
   return { toast: 'Logged ✅' };
 }

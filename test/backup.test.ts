@@ -44,7 +44,9 @@ function fakeMessenger() {
       sent.push({ chatId: to.chatId, content });
       return 1;
     },
-    async edit() {},
+    async edit() {
+      return true;
+    },
     async delete() {},
     async pin() {},
     async sendDocument(chatId, filename, data, caption) {

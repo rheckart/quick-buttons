@@ -198,8 +198,11 @@ export interface Target {
 /** Thin wrapper over the Telegram Bot API. Real impl uses grammy; tests use a fake. */
 export interface Messenger {
   send(to: Target, content: Rendered): Promise<number>;
-  /** Editing to identical content must not throw. A message that no longer exists must not throw either. */
-  edit(chatId: number, messageId: number, content: Rendered): Promise<void>;
+  /**
+   * Editing to identical content must not throw. Resolves true if the message was edited or already showed
+   * this content, false if the message is gone (deleted by hand, too old to edit); it does not throw for that.
+   */
+  edit(chatId: number, messageId: number, content: Rendered): Promise<boolean>;
   /** Deleting a message that is already gone must not throw. */
   delete(chatId: number, messageId: number): Promise<void>;
   pin(chatId: number, messageId: number): Promise<void>;
@@ -243,6 +246,11 @@ export interface RoundView {
 export interface EntryView {
   entryId: number;
   by: Person;
+  /**
+   * Rounds only: the other distinct people who logged active entries of the same occurrence (not `by`),
+   * oldest first. Absent or empty when `by` is the only one.
+   */
+  alsoBy?: Person[];
   givenAt: Date;
   loggedAt: Date;
   /** givenAt differs from loggedAt by more than a minute. */

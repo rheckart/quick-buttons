@@ -173,7 +173,7 @@ async function clearAwaiting(ctx: Ctx, state: PanelState): Promise<void> {
 async function askForTime(ctx: Ctx, row: BotMessage, state: PanelState, c: CallbackCtx): Promise<boolean> {
   await clearAwaiting(ctx, state);
   const target = { chatId: row.chatId, threadId: row.threadId };
-  const promptMessageId = await safe(ctx, 'send time prompt', () => ctx.messenger.send(target, typeTimePrompt()));
+  const promptMessageId = await safe(ctx, 'send time prompt', () => ctx.messenger.send(target, typeTimePrompt(c.from)));
   if (promptMessageId === undefined) return false;
   state.awaiting = { promptMessageId, chatId: row.chatId, userId: c.from.userId };
   state.view = 'main';

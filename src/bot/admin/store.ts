@@ -1,6 +1,6 @@
-import type { MedPatch } from '../../db/repos.js';
+import type { MedPatch, UiStateRepo } from '../../db/repos.js';
 import type { MedDraft } from '../../render/index.js';
-import type { MedKind } from '../../types.js';
+import type { Clock, MedKind } from '../../types.js';
 import type { TypedField } from './draft.js';
 
 /** What the single admin message in a private chat is showing right now. */
@@ -27,7 +27,7 @@ export interface Session {
   view: View;
 }
 
-/** Where open sessions live, keyed by private chat id. Swap for a database-backed one to survive restarts. */
+/** Where open sessions live, keyed by private chat id. The database-backed one survives restarts. */
 export interface DraftStore {
   get(chatId: number): Promise<Session | undefined>;
   set(chatId: number, session: Session): Promise<void>;
@@ -47,6 +47,22 @@ export function createMemoryDraftStore(): DraftStore {
     },
     async delete(chatId) {
       sessions.delete(chatId);
+    },
+  };
+}
+
+/** In the `ui_state` table under `admin:<chatId>` (DESIGN rule 5): a half-made draft survives a restart. */
+export function createDbDraftStore(ui: UiStateRepo, clock: Clock): DraftStore {
+  const key = (chatId: number): string => `admin:${chatId}`;
+  return {
+    async get(chatId) {
+      return (await ui.get<Session>(key(chatId))) ?? undefined;
+    },
+    async set(chatId, session) {
+      await ui.set(key(chatId), session, clock.now());
+    },
+    async delete(chatId) {
+      await ui.delete(key(chatId));
     },
   };
 }

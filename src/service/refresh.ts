@@ -1,11 +1,12 @@
-import { buildBoardView, planMessages } from '../domain/index.js';
+import { buildBoardView, buildRoundView, planMessages } from '../domain/index.js';
 import type { Plan, Snapshot, Wanted } from '../domain/index.js';
-import { findPet, todayOf } from '../domain/snapshot.js';
+import { findMed, findPet, todayOf } from '../domain/snapshot.js';
 import { renderBoard } from '../render/index.js';
-import { inQuietHours } from '../time.js';
-import type { BotMessage } from '../types.js';
+import { addDays, inQuietHours } from '../time.js';
+import type { BotMessage, LogEntry } from '../types.js';
 import type { Ctx } from './ctx.js';
 import { safe } from './ctx.js';
+import { settle } from './logging.js';
 import { removeMessage, sendTracked, sweepDeadRows } from './messages.js';
 import type { Slot } from './messages.js';
 import { closePanel, isFresh, listPanels, panelKey } from './panelState.js';
@@ -92,8 +93,40 @@ async function sweepStale(ctx: Ctx, now: Date): Promise<void> {
   }
 }
 
-/** The scheduler tick. Idempotent: with nothing changed it makes no Telegram calls. */
-export async function reconcile(ctx: Ctx): Promise<void> {
+/** Does a live reminder row stand for this entry's record message? */
+function hasRecordRow(snap: Snapshot, entry: LogEntry, rows: BotMessage[], now: Date): boolean | 'skip' {
+  if (entry.roundKey !== null) {
+    if (!buildRoundView(snap, entry.petId, entry.roundKey, entry.forDate, now)) return 'skip';
+    return rows.some((r) => r.petId === entry.petId && r.roundKey === entry.roundKey && r.medId === null && r.forDate === entry.forDate);
+  }
+  const med = findMed(snap, entry.items[0]?.medId ?? -1);
+  if (!med) return 'skip';
+  if (med.kind === 'as_needed') {
+    return entry.recordMessageId !== null && rows.some((r) => r.petId === entry.petId && r.medId === med.id && r.messageId === entry.recordMessageId);
+  }
+  return rows.some((r) => r.petId === entry.petId && r.roundKey === null && r.medId === med.id && r.forDate === entry.forDate);
+}
+
+/**
+ * A log is written before its record message is sent, so a Telegram outage (or a record deleted by hand and
+ * then noticed) can leave an active entry with no record. The planner skips completed rounds, so nothing else
+ * would ever post one. Looks at today and yesterday and posts the missing records.
+ */
+async function repostMissingRecords(ctx: Ctx, now: Date): Promise<void> {
+  const snap = await loadSnapshot(ctx);
+  const today = todayOf(snap, now);
+  const since = addDays(today, -1);
+  let rows = await ctx.repos.messages.findLive({ kind: 'reminder' });
+  for (const entry of snap.entries) {
+    if (entry.undone || entry.forDate < since || entry.forDate > today) continue;
+    if (hasRecordRow(snap, entry, rows, now) !== false) continue;
+    await safe(ctx, `repost record of entry ${entry.id}`, () => settle(ctx, entry.id, null, now));
+    rows = await ctx.repos.messages.findLive({ kind: 'reminder' });
+  }
+}
+
+/** One planning pass. Returns true when a live message turned out to be gone from Telegram. */
+async function pass(ctx: Ctx): Promise<boolean> {
   const now = ctx.clock.now();
   await ensureBoards(ctx);
   await sweepDeadRows(ctx, now);
@@ -104,7 +137,19 @@ export async function reconcile(ctx: Ctx): Promise<void> {
   const live = await loadLiveRows(ctx);
   const plan = planMessages(snap, now, await loadPlanningRows(ctx, live, todayOf(snap, now)));
   await applyRemovals(ctx, plan, live);
-  if (quiet) return;
+  if (quiet) return false;
   for (const wanted of plan.create) await safe(ctx, `create ${wanted.kind}`, () => createWanted(ctx, snap, wanted, now));
-  await rerender(ctx, snap, live.filter((r) => !plan.remove.includes(r.id)), now);
+  await repostMissingRecords(ctx, now);
+  const kept = live.filter((r) => !plan.remove.includes(r.id));
+  await rerender(ctx, snap, kept, now);
+  const stillLive = new Set((await loadLiveRows(ctx)).map((r) => r.id));
+  return kept.some((r) => !stillLive.has(r.id));
+}
+
+/**
+ * The scheduler tick. Idempotent: with nothing changed it makes no Telegram calls. A message found gone
+ * while editing (deleted by hand) is posted again in the same tick, by a second pass.
+ */
+export async function reconcile(ctx: Ctx): Promise<void> {
+  if (await pass(ctx)) await pass(ctx);
 }

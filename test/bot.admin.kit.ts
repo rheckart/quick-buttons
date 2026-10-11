@@ -195,7 +195,7 @@ export class Chat {
   }
 }
 
-export async function makeAdminKit(opts: { now?: string; deps?: Partial<AdminDeps> } = {}): Promise<AdminKit> {
+export async function makeAdminKit(opts: { now?: string; deps?: Partial<AdminDeps> | ((h: Harness) => Partial<AdminDeps>) } = {}): Promise<AdminKit> {
   const h = await makeHarness({ now: opts.now ?? '2026-10-10 12:00' });
   const bot = new Bot('1:fake', { botInfo: BOT_USER });
   const tg = new FakeTelegram();
@@ -203,7 +203,10 @@ export async function makeAdminKit(opts: { now?: string; deps?: Partial<AdminDep
   const service = createService({
     db: h.db, messenger: createTelegramMessenger(bot.api), clock: h.clock, settings: h.settings, logger: h.logger,
   });
-  registerAdmin(bot, { service, settings: h.settings, logger: h.logger, clock: h.clock, ...opts.deps });
+  registerAdmin(bot, {
+    service, settings: h.settings, logger: h.logger, clock: h.clock,
+    ...(typeof opts.deps === 'function' ? opts.deps(h) : opts.deps),
+  });
   const passedOn: Update[] = [];
   bot.use(async (ctx, next) => {
     passedOn.push(ctx.update);

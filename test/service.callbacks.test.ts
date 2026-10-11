@@ -83,7 +83,7 @@ describe('the double-dose guard', () => {
     await h.tap(h.fake.one('already given by Rob'), 'Yes, log again', DANI);
     expect(await entries()).toHaveLength(2);
     expect(h.fake.live().filter((x) => x.text.includes('already given'))).toEqual([]);
-    expect(h.fake.one('Given by Danielle')).toBeDefined();
+    expect(h.fake.one('Given by Rob & Danielle')).toBeDefined();
   });
 
   it('asking twice does not stack prompts', async () => {
@@ -141,7 +141,7 @@ describe('the Change panel', () => {
     h.clock.advance(5);
     await h.tap(h.fake.one('Still to give'), 'Log the rest', DANI);
     expect(await entries()).toHaveLength(2);
-    const record = h.fake.one('Given by Danielle');
+    const record = h.fake.one('Given by Rob & Danielle');
     expect(record.text).not.toContain('Still to give');
     expect(record.text).toContain('Antibiotic, Eye drops');
   });
@@ -201,6 +201,22 @@ describe('typed times', () => {
     await h.tap(h.fake.one('When was it given'), 'Type a time');
     return h.fake.live().find((m) => m.forceReply)!;
   }
+
+  it('asks only the person who tapped: the prompt mentions them and is a selective force reply', async () => {
+    const prompt = await askForTime();
+    expect(prompt.text).toContain('<a href="tg://user?id=1">Rob</a>');
+    expect(prompt.forceReply).toBe(true);
+  });
+
+  it('mentions whoever tapped, escaped', async () => {
+    h.clock.set('2026-10-10 08:40');
+    const kid = { userId: 3, name: 'Kid <b>' };
+    await h.tap(reminder(), 'Change', kid);
+    await h.tap(h.fake.one('Eye drops'), 'Given at', kid);
+    await h.tap(h.fake.one('When was it given'), 'Type a time', kid);
+    const prompt = h.fake.live().find((m) => m.forceReply)!;
+    expect(prompt.text).toContain('<a href="tg://user?id=3">Kid &lt;b&gt;</a>');
+  });
 
   it('accepts a reply to the prompt from the same user, deletes the prompt and updates the panel', async () => {
     const prompt = await askForTime();
@@ -281,7 +297,7 @@ describe('fixing', () => {
     await h.tap(h.fake.one('Eye drops'), 'Log these', ROB);
     h.clock.advance(1);
     await h.tap(h.fake.one('Still to give'), 'Log the rest', DANI);
-    await h.tap(h.fake.one('Given by Danielle'), 'Fix', ROB);
+    await h.tap(h.fake.one('Given by Rob & Danielle'), 'Fix', ROB);
     await h.tap(h.fake.one('Eye drops'), 'Undo', ROB);
     expect(h.fake.one('Late after').text).toContain('Antibiotic + Eye drops');
     expect((await entries()).every((e) => e.undone)).toBe(true);

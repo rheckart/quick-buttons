@@ -53,3 +53,12 @@ Check: `pnpm typecheck`, `pnpm test` (`pnpm vitest run test/x.test.ts` for one f
 - **Telegram I/O** (`src/bot/telegramMessenger.ts`): HTML parse mode, link previews off, 3 tries total (429 waits `retry_after`; network and 5xx back off 1 s / 3 s), harmless edit/delete/pin errors swallowed and logged, deleted topic and missing admin rights rethrown as `TopicGoneError` / `MissingRightsError`. Documents are sent silently.
 - **Backups** (`src/backup.ts`): `pg_dump --format=custom --no-owner`, password moved from the URL to `PGPASSWORD` and scrubbed from errors. `runBackup` never throws and alerts the backup chat on any failure; the caller must record the attempt date after ANY result (`backupDue(now, settings, lastRunDate)` is once per local day at or after `backupTime`). Dumps over 50 MB are replaced by a text warning.
 - **Proof scripts**: `scripts/backup-restore-check.sh` (throwaway `postgres:17`: migrate, sample rows, backup via `src/backup.ts`, `pg_restore`, compare every table), `scripts/pg-check.ts` (real `pg` driver: bigint ids, commit, rollback, nested tx, repos), `scripts/migrate-cli.ts`, `scripts/backup-cli.ts`.
+
+## More decisions (from review)
+- **Late start / downtime**: reminders are only created while `effective due <= now < late-after`. A bot that was down at 8:00 and starts at 11:00 posts no stale reminder or follow-up; the board shows ⚠️ LATE and still lets anyone log.
+- **Quiet hours vs. settings**: the settings file is rejected if a round's due time, its follow-up midpoint, or a monthly reminder time falls inside quiet hours. (Late-after may be anywhere.)
+- **Med added mid-day**: it does not join a round whose late-after has already passed that day, so it never shows as instantly LATE.
+- **Several people on one round**: the record reads "Given by Rob & Danielle, last at 9:10"; "✏️ edited by" follows the newest edit across all entries of the round.
+- **Fix deadline for monthly meds** is per entry: older entries become admin-only first.
+- **Messages deleted by hand** are re-posted (edit returns false → row marked deleted → board/reminder re-created).
+- **Not done / known gaps**: undo after the follow-up time re-posts a follow-up with @mentions (spec: "carry on as normal"); a typed "7:45" is always read as today; no startup check that the bot has pin/delete rights; nothing tested against real Telegram.

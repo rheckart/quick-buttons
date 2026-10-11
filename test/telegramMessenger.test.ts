@@ -1,6 +1,6 @@
 import { Api, GrammyError, HttpError, type Transformer } from 'grammy';
 import { describe, expect, it } from 'vitest';
-import { MissingRightsError, TopicGoneError, createTelegramMessenger } from '../src/bot/telegramMessenger.js';
+import { MissingRightsError, RateLimitedError, TopicGoneError, createTelegramMessenger } from '../src/bot/telegramMessenger.js';
 import type { Rendered } from '../src/types.js';
 
 interface Call {
@@ -78,6 +78,12 @@ describe('send', () => {
     expect(t.calls[0]!.payload.reply_markup).toEqual({ force_reply: true });
   });
 
+  it('makes force_reply selective in a group, so only the mentioned person gets the reply UI', async () => {
+    const t = fakeTelegram();
+    await t.messenger.send({ chatId: -100, threadId: 11 }, { text: 'Time?', keyboard: [], forceReply: true });
+    expect(t.calls[0]!.payload.reply_markup).toEqual({ force_reply: true, selective: true });
+  });
+
   it('omits reply_markup when there are no buttons', async () => {
     const t = fakeTelegram();
     await t.messenger.send({ chatId: 1 }, { text: 'plain', keyboard: [] });
@@ -112,6 +118,21 @@ describe('retries', () => {
     expect(await t.messenger.send({ chatId: 1 }, content)).toBe(9);
     expect(t.sleeps).toEqual([7000]);
     expect(t.calls).toHaveLength(2);
+  });
+
+  it('does not freeze polling for a long rate limit: it fails with a clear error instead', async () => {
+    const t = fakeTelegram([fail(429, 'Too Many Requests: retry after 600', { retry_after: 600 }), ok()]);
+    const err = await t.messenger.send({ chatId: 1 }, content).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(RateLimitedError);
+    expect((err as Error).message).toContain('600');
+    expect(t.sleeps).toEqual([]);
+    expect(t.calls).toHaveLength(1);
+  });
+
+  it('still waits for a limit of 30 seconds', async () => {
+    const t = fakeTelegram([fail(429, 'Too Many Requests: retry after 30', { retry_after: 30 }), ok({ message_id: 4 })]);
+    expect(await t.messenger.send({ chatId: 1 }, content)).toBe(4);
+    expect(t.sleeps).toEqual([30_000]);
   });
 
   it('gives up after 3 tries in total', async () => {
@@ -165,15 +186,24 @@ describe('edit', () => {
     expect(t.calls[0]!.payload.reply_markup).toEqual({ inline_keyboard: [] });
   });
 
-  it.each([
-    'Bad Request: message is not modified: specified new message content and reply markup are exactly the same',
-    'Bad Request: message to edit not found',
-    "Bad Request: message can't be edited",
-  ])('swallows and logs "%s"', async (description) => {
-    const t = fakeTelegram([fail(400, description)]);
-    await expect(t.messenger.edit(1, 5, content)).resolves.toBeUndefined();
+  it('says true when the edit went through, or the message already showed this', async () => {
+    expect(await fakeTelegram([ok(true)]).messenger.edit(1, 5, content)).toBe(true);
+    const t = fakeTelegram([
+      fail(400, 'Bad Request: message is not modified: specified new message content and reply markup are exactly the same'),
+    ]);
+    expect(await t.messenger.edit(1, 5, content)).toBe(true);
     expect(t.logs.some((l) => l.includes('ignored'))).toBe(true);
   });
+
+  it.each(['Bad Request: message to edit not found', "Bad Request: message can't be edited", 'Bad Request: MESSAGE_ID_INVALID'])(
+    'says false when the message is gone ("%s")',
+    async (description) => {
+      const t = fakeTelegram([fail(400, description)]);
+      expect(await t.messenger.edit(1, 5, content)).toBe(false);
+      expect(t.logs.some((l) => l.includes('gone'))).toBe(true);
+      expect(t.calls).toHaveLength(1);
+    },
+  );
 
   it('rethrows other edit errors', async () => {
     const t = fakeTelegram([fail(400, "Bad Request: can't parse entities: Unsupported start tag")]);

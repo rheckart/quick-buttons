@@ -1,13 +1,13 @@
-import { addDays, addMinutes, instantAt } from '../time.js';
+import { addDays, addMinutes, addMonth, instantAt, localDate } from '../time.js';
 import type { LocalDate, LogEntry, Person } from '../types.js';
 import { findMed, findPet, findRound, hasItem, type Snapshot } from './snapshot.js';
-import { monthlyDueDate } from './monthly.js';
 import { effectiveAt } from './times.js';
 
 /**
  * When "anyone can fix" ends and "admins only" begins for an entry:
  *  - round entry: the round's next reminder, i.e. the next day's due time (shifted past quiet hours);
- *  - monthly entry: the morning reminder of the med's next due date, counting this entry as given;
+ *  - monthly entry: the morning reminder of the due date one month after THIS entry's own given date (so the
+ *    latest dose of a med keeps its usual deadline and older doses, undone or not, expire earlier);
  *  - as-needed entry (or anything unrecognised): 24 hours after it was given.
  */
 export function fixDeadline(snap: Snapshot, entry: LogEntry): Date {
@@ -22,13 +22,8 @@ export function fixDeadline(snap: Snapshot, entry: LogEntry): Date {
   }
   const med = entry.items[0] && findMed(snap, entry.items[0].medId);
   if (med?.kind !== 'monthly') return fallback;
-  const due: LocalDate = monthlyDueDate(withEntryCounted(snap, entry), med);
+  const due: LocalDate = addMonth(localDate(entry.givenAt, tz));
   return effectiveAt(snap.settings, instantAt(due, pet.monthlyMorning, tz));
-}
-
-function withEntryCounted(snap: Snapshot, entry: LogEntry): Snapshot {
-  const others = snap.entries.filter((e) => e.id !== entry.id);
-  return { ...snap, entries: [...others, { ...entry, undone: false }] };
 }
 
 export type CanFix = { ok: true } | { ok: false; reason: string };

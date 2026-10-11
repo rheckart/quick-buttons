@@ -6,16 +6,17 @@ import { createAdminController } from './admin/controller.js';
 import type { AdminController } from './admin/controller.js';
 import { createMemoryDraftStore } from './admin/store.js';
 import type { DraftStore } from './admin/store.js';
+import { toastText } from './toast.js';
 import { createTelegramMessenger } from './telegramMessenger.js';
 
 export type { DraftStore, Session } from './admin/store.js';
-export { createMemoryDraftStore } from './admin/store.js';
+export { createDbDraftStore, createMemoryDraftStore } from './admin/store.js';
 
 export interface AdminDeps {
   service: Service;
   settings: Settings;
   logger?: Logger;
-  /** Where half-made drafts live. Default: memory (a restart abandons them). */
+  /** Where half-made drafts live. Default: memory (a restart abandons them); main uses `createDbDraftStore`. */
   store?: DraftStore;
   /** "Today" for typed dates. Default: the system clock. */
   clock?: Clock;
@@ -97,7 +98,7 @@ async function answerAdminTap(
     logger.error('admin callback failed', err);
   }
   try {
-    await ctx.answerCallbackQuery(reply.toast ? { text: reply.toast, show_alert: reply.alert ?? false } : undefined);
+    await ctx.answerCallbackQuery(reply.toast ? { text: toastText(reply.toast), show_alert: reply.alert ?? false } : undefined);
   } catch (err) {
     logger.warn('admin: answering a callback failed', err);
   }

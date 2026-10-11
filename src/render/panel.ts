@@ -1,6 +1,6 @@
 import { fmtShortDay, fmtTime, localDate, minutesBetween, addMinutes } from '../time.js';
-import type { Button, MedState, Rendered } from '../types.js';
-import { btn, clip, esc } from './text.js';
+import type { Button, MedState, Person, Rendered } from '../types.js';
+import { btn, clip, esc, mention } from './text.js';
 
 export interface PanelMed {
   name: string;
@@ -82,10 +82,14 @@ export function renderGivenAtPicker(msgId: number, now: Date, tz: string): Rende
   return { text: '🕐 When was it given?', keyboard: rows };
 }
 
-/** Asked as a force_reply message so the typed answer arrives even with bot privacy mode on. */
-export function typeTimePrompt(): Rendered {
+/**
+ * Asked as a force_reply message so the typed answer arrives even with bot privacy mode on. It mentions the
+ * person who tapped: in a group the messenger sends it as a *selective* force reply, so only they get the
+ * reply box.
+ */
+export function typeTimePrompt(by: Person): Rendered {
   return {
-    text: '⌨️ Reply with when it was given, e.g. 7:45 or 7pm.',
+    text: `⌨️ ${mention(by)}, reply with when it was given, e.g. 7:45 or 7pm.`,
     keyboard: [],
     forceReply: true,
     silent: true,

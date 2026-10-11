@@ -709,6 +709,14 @@ describe('errors', () => {
     return card;
   }
 
+  it('a long service error is cut to what Telegram accepts for a toast (200 characters)', async () => {
+    const card = await completeCard();
+    vi.spyOn(kit.service, 'startMed').mockRejectedValueOnce(new ServiceError('x'.repeat(500)));
+    const answer = await rob.tap(card, '✅ Start');
+    expect(answer.text).toHaveLength(200);
+    expect(answer.alert).toBe(true);
+  });
+
   it('a service error is shown plainly and the draft is kept', async () => {
     const card = await completeCard();
     const spy = vi.spyOn(kit.service, 'startMed').mockRejectedValueOnce(new ServiceError('That name is too long.'));

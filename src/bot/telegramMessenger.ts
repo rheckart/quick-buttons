@@ -29,10 +29,25 @@ export class MissingRightsError extends Error {
   }
 }
 
+/** The bot never waits longer than this for a 429; a longer limit fails the call instead of freezing polling. */
+export const MAX_RETRY_AFTER_S = 30;
+
+/** Telegram asked us to back off for longer than we are willing to wait. */
+export class RateLimitedError extends Error {
+  constructor(readonly retryAfterSeconds: number, readonly telegramMessage: string) {
+    super(
+      `Telegram rate limit: asked to wait ${retryAfterSeconds}s, longer than the ${MAX_RETRY_AFTER_S}s this bot will wait ` +
+        `(${telegramMessage}). The call was abandoned so polling keeps running.`,
+    );
+    this.name = 'RateLimitedError';
+  }
+}
+
 const MAX_TRIES = 3;
 const NETWORK_BACKOFF_MS = [1_000, 3_000];
 
-const EDIT_HARMLESS = /message is not modified|message to edit not found|message can't be edited|MESSAGE_ID_INVALID/i;
+const EDIT_UNCHANGED = /message is not modified/i;
+const EDIT_GONE = /message to edit not found|message can't be edited|MESSAGE_ID_INVALID/i;
 const DELETE_GONE = /message to delete not found|message can't be deleted|MESSAGE_ID_INVALID/i;
 const PIN_GONE = /message to pin not found|MESSAGE_ID_INVALID/i;
 const TOPIC_GONE = /message thread not found|TOPIC_DELETED|TOPIC_CLOSED/i;
@@ -46,9 +61,18 @@ function keyboardMarkup(content: Rendered) {
   };
 }
 
-function sendMarkup(content: Rendered) {
-  if (content.forceReply) return { force_reply: true as const };
+/** Group chat ids are negative. A force reply there is selective: only the person mentioned in the text gets it. */
+function sendMarkup(content: Rendered, chatId: number) {
+  if (content.forceReply) return chatId < 0 ? { force_reply: true as const, selective: true as const } : { force_reply: true as const };
   return content.keyboard.length > 0 ? keyboardMarkup(content) : undefined;
+}
+
+/** Turns a 429 that asks for a long wait into a clear error (whatever try this was). */
+function refuseLongWait(err: unknown): void {
+  if (err instanceof GrammyError && err.error_code === 429) {
+    const wait = err.parameters.retry_after ?? 1;
+    if (wait > MAX_RETRY_AFTER_S) throw new RateLimitedError(wait, err.description);
+  }
 }
 
 /** Retry delay in ms if this failure is worth retrying, else null. */
@@ -69,6 +93,7 @@ export function createTelegramMessenger(api: Api, options: MessengerOptions = {}
       try {
         return await call();
       } catch (err) {
+        refuseLongWait(err);
         const delay = attempt < MAX_TRIES ? retryDelayMs(err, attempt) : null;
         if (delay === null) throw err;
         log(`telegram: ${describe(err)}; retrying in ${Math.round(delay / 1000)}s (try ${attempt + 1}/${MAX_TRIES})`);
@@ -104,7 +129,7 @@ export function createTelegramMessenger(api: Api, options: MessengerOptions = {}
           api.sendMessage(to.chatId, content.text, {
             parse_mode: 'HTML',
             link_preview_options: { is_disabled: true },
-            reply_markup: sendMarkup(content),
+            reply_markup: sendMarkup(content, to.chatId),
             disable_notification: content.silent ? true : undefined,
             message_thread_id: to.threadId ?? undefined,
           }),
@@ -118,16 +143,26 @@ export function createTelegramMessenger(api: Api, options: MessengerOptions = {}
     async edit(chatId, messageId, content) {
       // An empty keyboard must be sent explicitly, or Telegram keeps the old buttons.
       const reply_markup = keyboardMarkup(content);
-      await tolerating(
-        `edit ${messageId} in ${chatId}`,
-        EDIT_HARMLESS,
-        () =>
+      try {
+        await withRetry(() =>
           api.editMessageText(chatId, messageId, content.text, {
             parse_mode: 'HTML',
             link_preview_options: { is_disabled: true },
             reply_markup,
           }),
-      );
+        );
+        return true;
+      } catch (err) {
+        if (err instanceof GrammyError && EDIT_UNCHANGED.test(err.description)) {
+          log(`telegram: edit ${messageId} in ${chatId}: ${err.description} (ignored)`);
+          return true;
+        }
+        if (err instanceof GrammyError && EDIT_GONE.test(err.description)) {
+          log(`telegram: edit ${messageId} in ${chatId}: ${err.description} (message is gone)`);
+          return false;
+        }
+        throw err;
+      }
     },
 
     async delete(chatId, messageId) {

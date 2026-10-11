@@ -3,11 +3,10 @@ import type { User } from 'grammy/types';
 import { decodeCallback } from '../render/index.js';
 import type { CallbackCtx, CallbackResult, Logger, Service } from '../service/index.js';
 import type { Person } from '../types.js';
+import { toastText } from './toast.js';
 
 export const OUT_OF_DATE_TEXT = 'That button is out of date';
 const FAILED: CallbackResult = { toast: 'Something went wrong, please try again.', alert: true };
-/** Telegram rejects answerCallbackQuery text longer than this. */
-const TOAST_LIMIT = 200;
 
 export function personOf(user: User): Person {
   return { userId: user.id, name: user.first_name.trim() || user.username || 'Someone' };
@@ -46,7 +45,7 @@ export function registerCallbacks(bot: Bot, service: Pick<Service, 'handleCallba
   async function answer(ctx: Context, result: CallbackResult): Promise<void> {
     try {
       await ctx.answerCallbackQuery(
-        result.toast ? { text: result.toast.slice(0, TOAST_LIMIT), show_alert: result.alert || undefined } : undefined,
+        result.toast ? { text: toastText(result.toast), show_alert: result.alert || undefined } : undefined,
       );
     } catch (err) {
       logger.warn('could not answer a button tap', err); // e.g. "query is too old"

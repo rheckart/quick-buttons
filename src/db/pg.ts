@@ -24,11 +24,19 @@ function wrap(q: Queryable, tx: Db['tx'], close: Db['close']): Db {
   };
 }
 
+export interface PgOptions {
+  /** Where pool errors go (main passes its redacting logger). Default: console.error. */
+  logger?: { error(message: string, err?: unknown): void };
+}
+
 /** Db over a `pg` Pool. `tx` pins one client for BEGIN..COMMIT; a nested `tx` reuses that client. */
-export function createPgDb(connectionString: string): Db {
+export function createPgDb(connectionString: string, options: PgOptions = {}): Db {
   const pool = new pg.Pool({ connectionString, types, max: 5 });
   // An idle client dying (server restart, network) must not crash the process.
-  pool.on('error', (err) => console.error('pg pool error:', err.message));
+  pool.on('error', (err) => {
+    if (options.logger) options.logger.error('database connection error', err);
+    else console.error('pg pool error:', err.message);
+  });
 
   const txDb = (client: pg.PoolClient): Db => {
     const db: Db = wrap(

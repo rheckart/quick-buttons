@@ -40,18 +40,35 @@ export async function sendTracked(ctx: Ctx, slot: Slot, draw: (rowId: number) =>
   return { ...row, messageId, renderHash };
 }
 
-/** Edits the message when what it should show changed. False when the edit failed (retried next time). */
+/**
+ * Edits the message when what it should show changed. False when the edit failed (retried next time) or
+ * the message is gone from Telegram. A gone message is marked deleted at once, so the planner and
+ * `ensureBoards` post it again, and an entry's record id is cleared so its record is re-posted.
+ */
 export async function show(ctx: Ctx, row: BotMessage, content: Rendered): Promise<boolean> {
   const hash = hashRendered(content);
   if (hash === row.renderHash) return true;
+  let edited: boolean;
   try {
-    await ctx.messenger.edit(row.chatId, row.messageId, content);
+    edited = await ctx.messenger.edit(row.chatId, row.messageId, content);
   } catch (err) {
     ctx.log.warn(`editing ${row.kind} ${row.id} failed`, err);
     return false;
   }
+  if (!edited) {
+    ctx.log.warn(`${row.kind} ${row.id} (message ${row.messageId}) is gone from Telegram; it will be posted again`);
+    await forgetGone(ctx, row);
+    return false;
+  }
   await ctx.repos.messages.setRenderHash(row.id, hash);
   return true;
+}
+
+async function forgetGone(ctx: Ctx, row: BotMessage): Promise<void> {
+  await ctx.repos.messages.markDeleted(row.id, ctx.clock.now());
+  if (row.kind === 'reminder' && row.messageId !== 0) {
+    await ctx.db.query('UPDATE log_entries SET record_message_id = NULL WHERE record_message_id = $1', [row.messageId]);
+  }
 }
 
 /** Deletes the Telegram message and marks the row. On failure the row stays live and is retried. */

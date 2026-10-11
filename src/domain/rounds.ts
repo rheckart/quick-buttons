@@ -1,3 +1,4 @@
+import { instantAt, localDate } from '../time.js';
 import type { LocalDate, Med, MedState, RoundView } from '../types.js';
 import { isMedActiveOn } from './course.js';
 import {
@@ -5,7 +6,7 @@ import {
   findRound,
   isDaily,
   occurrenceEntries,
-  pickLatest,
+  pickRoundLatest,
   type Snapshot,
 } from './snapshot.js';
 import { roundTimes } from './times.js';
@@ -13,15 +14,25 @@ import { roundTimes } from './times.js';
 /**
  * Daily meds listed for a round on a date (stable order by id): the ones active that day, plus any med
  * with an item in an active entry for that occurrence, so a logged record never loses lines.
+ *
+ * A med created on `forDate` does not join an occurrence whose late-after instant is at or before its
+ * creation (adding a med at 15:00 must not make this morning's round late); it joins from the next day.
  */
 export function medsInRound(snap: Snapshot, petId: string, roundKey: string, forDate: LocalDate): Med[] {
   const active = occurrenceEntries(snap, petId, roundKey, forDate).filter((e) => !e.undone);
   const logged = new Set(active.flatMap((e) => e.items.map((i) => i.medId)));
+  const tz = snap.settings.timezone;
+  const pet = findPet(snap.settings, petId);
+  const round = pet && findRound(pet, roundKey);
+  const lateAt = round ? instantAt(forDate, round.lateAfter, tz) : null;
+  const joinsInTime = (m: Med): boolean =>
+    lateAt === null || localDate(m.createdAt, tz) !== forDate || m.createdAt < lateAt;
   return snap.meds
     .filter(
       (m) =>
         m.petId === petId &&
-        (logged.has(m.id) || (isDaily(m) && m.roundKeys.includes(roundKey) && isMedActiveOn(snap, m, forDate))),
+        (logged.has(m.id) ||
+          (isDaily(m) && m.roundKeys.includes(roundKey) && isMedActiveOn(snap, m, forDate) && joinsInTime(m))),
     )
     .sort((a, b) => a.id - b.id);
 }
@@ -68,7 +79,7 @@ export function buildRoundView(
     phase: phaseAt(now, times, complete),
     complete,
     anyLogged: active.length > 0,
-    latest: pickLatest(entries, times.lateAt),
+    latest: pickRoundLatest(entries, times.lateAt),
   };
 }
 

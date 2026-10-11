@@ -244,8 +244,9 @@ describe('panel', () => {
   });
 
   it('type-time prompt is a force reply with no keyboard', () => {
-    const r = typeTimePrompt();
+    const r = typeTimePrompt(rob);
     expect(r.forceReply).toBe(true);
+    expect(r.text).toContain('<a href="tg://user?id=1">Rob</a>');
     expect(r.keyboard).toEqual([]);
     expect(r.text).toContain('7:45');
   });

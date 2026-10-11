@@ -1,5 +1,5 @@
 import { localDate } from '../time.js';
-import type { EntryView, LocalDate, LogEntry, Med, PetConfig, RoundConfig, Settings } from '../types.js';
+import type { EntryView, LocalDate, LogEntry, Med, Person, PetConfig, RoundConfig, Settings } from '../types.js';
 
 /** Everything the pure rules need. `entries` may include undone ones; status ignores them. */
 export interface Snapshot {
@@ -58,6 +58,32 @@ export function pickLatest(entries: LogEntry[], lateAt: Date | null): EntryView 
   const sorted = [...entries].sort(newestFirst);
   const entry = sorted.find((e) => !e.undone) ?? sorted[0];
   return entry ? toEntryView(entry, lateAt) : null;
+}
+
+/**
+ * Like `pickLatest`, for a round occurrence that may hold several active entries (a partial log, then
+ * "Log the rest" by someone else; or fixes of an older entry):
+ *  - `by` stays the newest-created active entry's logger; `alsoBy` = the other distinct people who logged
+ *    an active entry, oldest first;
+ *  - `editedBy` = the newest edit revision across active entries that is newer than the newest create
+ *    (the newest entry's own edit always counts).
+ */
+export function pickRoundLatest(entries: LogEntry[], lateAt: Date | null): EntryView | null {
+  const view = pickLatest(entries, lateAt);
+  const active = entries.filter((e) => !e.undone);
+  const newest = [...active].sort(newestFirst)[0];
+  if (!view || !newest) return view;
+
+  const alsoBy: Person[] = [];
+  for (const e of [...active].sort((a, b) => -newestFirst(a, b))) {
+    const id = e.loggedBy.userId;
+    if (id !== newest.loggedBy.userId && !alsoBy.some((p) => p.userId === id)) alsoBy.push(e.loggedBy);
+  }
+
+  const edits = active
+    .filter((e) => e.lastRevision.kind === 'edit' && (e === newest || e.lastRevision.at > newest.loggedAt))
+    .sort((a, b) => b.lastRevision.at.getTime() - a.lastRevision.at.getTime() || b.id - a.id);
+  return { ...view, alsoBy, editedBy: edits[0]?.lastRevision.by ?? null };
 }
 
 function toEntryView(e: LogEntry, lateAt: Date | null): EntryView {

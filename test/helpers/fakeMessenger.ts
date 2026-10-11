@@ -31,6 +31,7 @@ export class FakeMessenger implements Messenger {
   readonly documents: { chatId: number; filename: string; caption?: string }[] = [];
   private nextId = 1000;
   private failing = new Set<Op>();
+  private failingOnce = new Set<Op>();
 
   failOn(...ops: Op[]): void {
     for (const op of ops) this.failing.add(op);
@@ -38,10 +39,17 @@ export class FakeMessenger implements Messenger {
 
   stopFailing(): void {
     this.failing.clear();
+    this.failingOnce.clear();
+  }
+
+  /** The next call of this kind fails; later ones work. */
+  failOnce(...ops: Op[]): void {
+    for (const op of ops) this.failingOnce.add(op);
   }
 
   private record(call: Call): void {
     this.calls.push(call);
+    if (this.failingOnce.delete(call.op)) throw new Error(`fake telegram: ${call.op} failed once`);
     if (this.failing.has(call.op)) throw new Error(`fake telegram: ${call.op} failed`);
   }
 
@@ -63,14 +71,16 @@ export class FakeMessenger implements Messenger {
     return messageId;
   }
 
-  async edit(chatId: number, messageId: number, content: Rendered): Promise<void> {
+  async edit(chatId: number, messageId: number, content: Rendered): Promise<boolean> {
     const msg = this.find(chatId, messageId);
     const same = msg && JSON.stringify([msg.text, msg.keyboard]) === JSON.stringify([content.text, content.keyboard]);
     this.record({ op: 'edit', chatId, messageId, noop: !msg || msg.deleted || !!same });
-    if (!msg || msg.deleted || same) return;
+    if (!msg || msg.deleted) return false;
+    if (same) return true;
     msg.text = content.text;
     msg.keyboard = content.keyboard;
     msg.edits++;
+    return true;
   }
 
   async delete(chatId: number, messageId: number): Promise<void> {

@@ -2,7 +2,7 @@ import { realpathSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { Api, GrammyError } from 'grammy';
 import { runBackup } from './backup.js';
-import { registerAdmin } from './bot/admin.js';
+import { createDbDraftStore, registerAdmin } from './bot/admin.js';
 import { createBot, CONFLICT_MESSAGE, isPollingConflict } from './bot/index.js';
 import { createTelegramMessenger } from './bot/telegramMessenger.js';
 import { ConfigError, loadSettings } from './config.js';
@@ -107,7 +107,7 @@ export async function startApp(env: Env, logger: AppLogger, onFatal: (message: s
   const api = new Api(env.botToken);
   const me = await step('Cannot reach Telegram', () => checkToken(api)); // a bad token fails here, before the database is touched
 
-  const db = createPgDb(env.databaseUrl);
+  const db = createPgDb(env.databaseUrl, { logger });
   try {
     await step(`Cannot set up the database ${describeDatabase(env.databaseUrl)}`, () => migrate(db));
   } catch (err) {
@@ -129,7 +129,7 @@ export async function startApp(env: Env, logger: AppLogger, onFatal: (message: s
     settings,
     logger,
     botInfo: me,
-    registerExtra: (b) => registerAdmin(b, { service, settings, logger, clock: systemClock, messenger }),
+    registerExtra: (b) => registerAdmin(b, { service, settings, logger, clock: systemClock, messenger, store: createDbDraftStore(createRepos(db).ui, systemClock) }),
   });
 
   const polling = bot

@@ -64,7 +64,7 @@ SELECT version();
 
 (`openssl rand -hex 24` makes a good password with no characters that need escaping.)
 
-`SELECT version();` prints something like `PostgreSQL 16.4 ...`. **The first number is your `PG_MAJOR`.** The bot's backup tool (`pg_dump`) refuses to dump a server newer than itself, so `PG_MAJOR` must be the same as, or newer than, the server. Put it in `docker-compose.yml` (`args: PG_MAJOR`). The default is 17.
+`SELECT version();` prints something like `PostgreSQL 16.4 ...`. **The first number is your `PG_MAJOR`.** The bot's backup tool (`pg_dump`) refuses to dump a server newer than itself, so `PG_MAJOR` must be the same as, or newer than, the server. Put it in `docker-compose.yml` (`args: PG_MAJOR`). The default is 17. The restore tool (`pg_restore`) must be at least as new as the dump's, which is why step 8 runs it from the bot image.
 
 The bot creates its own tables the first time it starts.
 
@@ -84,7 +84,7 @@ chmod 644 settings.yaml     # the container runs as a non-root user and must be 
 | `admins` | Telegram user ids who get the setup menu (start, stop, edit meds, fix old logs). At least one. |
 | `givers` | People the follow-ups @mention: `{ user_id, name }`. |
 | `quiet_hours` | `start` / `end`. Nothing is sent in this window; it can cross midnight. Default `22:00` to `07:00`. Optional. |
-| `backup.chat_id` | The private chat that gets the nightly dump. Default: the first admin. Optional. |
+| `backup.chat_id` | Where the nightly dump goes: any chat the bot can message. A person's user id (a private chat) is the intended use; that person must have pressed Start on the bot. Default: the first admin. Optional. |
 | `backup.time` | When the nightly backup runs. Default `03:00`. Optional. |
 | `pets[].name` | Display name, e.g. `Twiggy`. |
 | `pets[].id` | Optional. Internal name (lowercase, dashes). Default: made from the name. Never change it later, it ties the pet to its history. |
@@ -123,15 +123,26 @@ The bot sends `pg_dump` output to the backup chat every night at `backup.time`. 
 **Do the restore test once, now, and again if you change servers or Postgres versions.** A backup you have never restored is a guess.
 
 1. Wait for a nightly dump (or run one by hand, see below). Download it from Telegram to the VPS, e.g. `pet-meds-2026-10-11-0300.dump`.
-2. Restore it into a **scratch** database. Use your Postgres admin role, because the bot's role cannot create databases:
+2. Two rules for the restore, both learned the hard way:
+
+   - **Restore as the bot's own role (`pet_meds`), not as your admin role.** The dump has no owners (`--no-owner`), so every restored table is owned by whoever runs `pg_restore`. Restored as the admin, the tables belong to the admin and the bot fails with `permission denied for table meds`. Run as `pet_meds` and they belong to the bot, with no `GRANT`s to remember. (If you must connect as a superuser, add `--role=pet_meds` instead, which does the same.)
+   - **Use a `pg_restore` that is the same major version as the dump's `pg_dump` or newer.** The dump was made by the `pg_dump` inside the bot image (`PG_MAJOR`, see step 4), and an older `pg_restore` refuses it ("unsupported version in file header"). The Postgres container's own `pg_restore` is only safe if its major version equals `PG_MAJOR`. The sure way is to run `pg_restore` from the bot image, which always matches.
+
+3. Create the scratch database with your admin role (the bot's role cannot create databases), then restore as `pet_meds` using the bot image. `<net>` is the docker network Postgres is on (the one in your `docker-compose.yml`), `<postgres-container>` its container name, and `pet-meds-bot` the image name from the compose file:
 
    ```bash
    docker exec -i <postgres-container> psql -U <admin-role> -c "CREATE DATABASE pet_meds_restore_test OWNER pet_meds"
-   docker exec -i <postgres-container> pg_restore -U <admin-role> --no-owner --exit-on-error \
+
+   docker run --rm -i --network <net> -e PGPASSWORD='<pet_meds password>' pet-meds-bot \
+     pg_restore -h <postgres-container> -U pet_meds --no-owner --no-acl --exit-on-error \
      -d pet_meds_restore_test < pet-meds-2026-10-11-0300.dump
    ```
 
-3. Compare row counts with the live database (the numbers should match, or the restored one may be a little behind if doses were logged after the dump):
+   Easiest: set `PG_MAJOR` to exactly your server's major version, so the dump, the restore and the server all match. A newer `PG_MAJOR` than the server works for backups and restores, with one wrinkle: a 17 `pg_restore` into a 16 server stops at `unrecognized configuration parameter "transaction_timeout"` when `--exit-on-error` is on. That line is harmless: leave `--exit-on-error` off and trust the row counts in the next step.
+
+   (`docker run ... pet-meds-bot pg_restore ...` replaces the image's normal command, so the bot itself does not start. If the image has another name, see `docker images`.) Alternative when the Postgres container's major version equals `PG_MAJOR`: `docker exec -i -e PGPASSWORD='<pet_meds password>' <postgres-container> pg_restore -h 127.0.0.1 -U pet_meds --no-owner --no-acl --exit-on-error -d pet_meds_restore_test < <dump>`.
+
+4. Compare row counts with the live database, and check the owner (the numbers should match, or the restored one may be a little behind if doses were logged after the dump; every owner should be `pet_meds`):
 
    ```bash
    for DB in pet_meds pet_meds_restore_test; do
@@ -145,17 +156,19 @@ The bot sends `pg_dump` output to the backup chat every night at `backup.time`. 
        SELECT 'ui_state', count(*) FROM ui_state UNION ALL
        SELECT 'schema_migrations', count(*) FROM schema_migrations"
    done
+   docker exec -i <postgres-container> psql -U <admin-role> -d pet_meds_restore_test -At \
+     -c "SELECT DISTINCT tableowner FROM pg_tables WHERE schemaname = 'public'"      # expect: pet_meds
    ```
 
-4. Delete the scratch database: `docker exec -i <postgres-container> psql -U <admin-role> -c "DROP DATABASE pet_meds_restore_test"`.
+5. Delete the scratch database: `docker exec -i <postgres-container> psql -U <admin-role> -c "DROP DATABASE pet_meds_restore_test"`.
 
-To really restore after a disaster: create an empty `pet_meds` database owned by `pet_meds` (step 4), run `pg_restore` as above with `-d pet_meds`, start the bot.
+To really restore after a disaster: create an empty `pet_meds` database owned by `pet_meds` (step 4), run the same `docker run ... pg_restore` as above with `-d pet_meds`, start the bot. Do not fix a wrong-owner restore with `GRANT`s; drop the database and restore again as `pet_meds`.
 
-If Postgres is not in Docker, drop the `docker exec -i <postgres-container>` part and run the same `psql` / `pg_restore` commands directly.
+If Postgres is not in Docker, drop the `docker exec -i <postgres-container>` part of the `psql` commands and run them directly. Keep running `pg_restore` from the bot image (use `--network host` and `-h 127.0.0.1` for a Postgres on the same machine).
 
-**Dry run without touching your server:** `scripts/backup-restore-check.sh` starts a throwaway `postgres:17` container, applies the app's schema, adds sample rows, backs up with the bot's own backup code, restores into a scratch database and compares every table. It cleans up after itself. Needs Docker and `pnpm install`.
+**Dry run without touching your server:** `scripts/backup-restore-check.sh` builds the bot image, starts a throwaway `postgres:17` container, applies the app's schema, adds sample rows, backs up with the bot's own backup code and the image's `pg_dump`, restores with the image's `pg_restore` as the `pet_meds` role (exactly as above), then compares every table and checks the owner. It cleans up after itself. Needs Docker and `pnpm install`. `BOT_IMAGE=<image>` skips the build; `PG_IMAGE=postgres:16` and `PG_MAJOR=17` try a server older than the client tools.
 
-**Take a backup by hand** (from a checkout with `pg_dump` installed): `pnpm tsx scripts/backup-cli.ts "$DATABASE_URL" out.dump`.
+**Take a backup by hand** (from a checkout with `pg_dump` installed): `pnpm tsx scripts/backup-cli.ts "$DATABASE_URL" out.dump [time-zone]`. Without the time zone the file name uses UTC; the nightly job names its files in the `timezone` of `settings.yaml`.
 
 ### 9. Updating, restarting, logs
 
@@ -177,7 +190,7 @@ The bot picks up `settings.yaml` only at start. Database changes (new tables) ar
 - **Cannot read settings file.** Check the volume path in the compose file and that the file is readable by everyone (`chmod 644`).
 - **Times are off.** Everything uses `timezone` in `settings.yaml`, not the server's clock. Check that and that you typed times as 24h (`"18:00"`).
 - **Nightly backup alerts say `pg_dump failed`.** Read the message in the alert. Typical causes: `PG_MAJOR` older than the server ("server version mismatch": rebuild with the right number), or a wrong password in `DATABASE_URL`.
-- **No backup arrives.** The backup chat must have pressed Start on the bot once (step 7), and `backup.chat_id` must be a user id, not a group.
+- **No backup arrives.** If `backup.chat_id` is a person, they must have pressed Start on the bot once (step 7). A group works only if the bot is a member, and it puts your database in that group, so a user id is the intended use.
 
 ## How it behaves
 
@@ -207,9 +220,11 @@ Where the spec left it open:
 
 Deploy and backup:
 
-- Telegram sends are retried 3 times in total: a rate limit (429) waits as long as Telegram asks; network errors and Telegram 5xx wait 1 s then 3 s. A retry after a lost network reply can, rarely, post a message twice.
-- Harmless Telegram errors ("message is not modified", "message to edit/delete not found", "can't be deleted") are logged and ignored.
+- Telegram sends are retried 3 times in total: a rate limit (429) waits as long as Telegram asks, up to 30 s (a longer limit fails that call with a clear error instead of freezing the bot); network errors and Telegram 5xx wait 1 s then 3 s. A retry after a lost network reply can, rarely, post a message twice.
+- Harmless Telegram errors ("message is not modified", "message to delete not found", "can't be deleted") are logged and ignored. An edit that finds the message gone ("message to edit not found") is not ignored: the bot forgets that message and posts it again (a board or reminder deleted by hand comes back the next time its content changes, a lost record message is re-posted).
+- A log is saved before its record message is sent. If Telegram was down for that send, the next scheduler tick posts the missing record (for today and yesterday).
+- Half-made admin cards (Start / Edit) are kept in the database, so a restart does not lose them.
 - Messages go out with link previews off. Backup files are sent without a notification sound.
 - The database password is passed to `pg_dump` through the `PGPASSWORD` environment variable, never on the command line, and is scrubbed from any error text.
-- Backup file names use your time zone: `pet-meds-YYYY-MM-DD-HHmm.dump`.
+- Backup file names use your time zone: `pet-meds-YYYY-MM-DD-HHmm.dump` (`scripts/backup-cli.ts` uses UTC unless you give it a zone).
 - The image is Debian-based with the Postgres client from the official PostgreSQL apt repository, matching `PG_MAJOR`. It runs as a non-root user and has no secrets baked in.
