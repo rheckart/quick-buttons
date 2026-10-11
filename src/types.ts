@@ -172,6 +172,10 @@ export interface Rendered {
   /** Telegram HTML (escape user text!). */
   text: string;
   keyboard: Button[][];
+  /** Send with Telegram's force_reply so the user's typed answer arrives even with bot privacy mode on. */
+  forceReply?: boolean;
+  /** Send without a notification sound (boards, panels, prompts). Reminders and follow-ups are NOT silent. */
+  silent?: boolean;
 }
 
 export interface Button {
