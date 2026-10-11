@@ -1,0 +1,601 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Answers ticket 09 "What do the bot's messages and buttons look like?"
+  Three structurally different Telegram bot layouts, switchable via ?variant=A|B|C and the bottom bar (or ← →).
+  Fake Telegram: nothing is sent anywhere, state lives in memory. Double-click to open.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PROTOTYPE — Pet meds bot messages</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.4 system-ui, sans-serif; background: #0b0f14; color: #e6edf3; }
+  header { padding: 10px 16px; background: #5a1d1d; font-size: 13px; }
+  header b { color: #ffb4b4; }
+  .wrap { display: flex; gap: 16px; padding: 16px 16px 90px; align-items: flex-start; }
+  .phone { width: 400px; flex: none; background: #0e1621; border-radius: 18px; border: 1px solid #22303f; display: flex; flex-direction: column; height: 760px; overflow: hidden; }
+  .bar { padding: 10px 14px; background: #17212b; border-bottom: 1px solid #22303f; }
+  .bar small { display: block; color: #7d8e9e; }
+  .pin { padding: 6px 14px; background: #17212b; border-bottom: 1px solid #22303f; font-size: 12px; color: #6ab3f3; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .msgs { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+  .msg { max-width: 92%; align-self: flex-start; }
+  .msg.me { align-self: flex-end; }
+  .bubble { background: #182533; padding: 7px 10px; border-radius: 12px; white-space: pre-wrap; }
+  .me .bubble { background: #2b5278; }
+  .bubble .from { color: #6ab3f3; font-weight: 600; font-size: 12px; }
+  .bubble .time { color: #7d8e9e; font-size: 11px; text-align: right; }
+  .bubble.flash { outline: 2px solid #f0c040; }
+  .kb { display: flex; flex-direction: column; gap: 3px; margin-top: 3px; }
+  .kb .row { display: flex; gap: 3px; }
+  .kb button { flex: 1; background: rgba(90,120,150,.35); color: #fff; border: 0; border-radius: 8px; padding: 7px 6px; font-size: 13px; cursor: pointer; }
+  .kb button:hover { background: rgba(90,120,150,.6); }
+  .input { display: flex; border-top: 1px solid #22303f; }
+  .input input { flex: 1; background: #17212b; border: 0; color: #fff; padding: 12px; font-size: 14px; outline: none; }
+  .side { flex: 1; min-width: 280px; background: #11161d; border: 1px solid #22303f; border-radius: 12px; padding: 12px; font-size: 13px; }
+  .side h3 { margin: 4px 0 8px; font-size: 13px; color: #9fb3c8; }
+  .side button, .side select { background: #22303f; color: #fff; border: 0; border-radius: 6px; padding: 6px 8px; margin: 2px; cursor: pointer; }
+  .side pre { background: #0b0f14; padding: 8px; border-radius: 6px; max-height: 330px; overflow: auto; font-size: 11px; }
+  .vdesc { color: #c9d6e2; background: #1a2532; padding: 8px; border-radius: 6px; }
+  .toast { position: fixed; top: 40%; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,.85); padding: 14px 18px; border-radius: 10px; max-width: 320px; text-align: center; display: none; z-index: 9; }
+  .switcher { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: #fff; color: #000; border-radius: 999px; padding: 6px 10px; display: flex; gap: 10px; align-items: center; box-shadow: 0 6px 24px rgba(0,0,0,.6); font-weight: 600; }
+  .switcher button { border: 0; background: #000; color: #fff; border-radius: 999px; width: 32px; height: 32px; cursor: pointer; font-size: 16px; }
+</style>
+</head>
+<body>
+<header><b>PROTOTYPE — throwaway.</b> Fake Telegram. Try: tap the reminder, untick a med, set a time, skip, tap the board twice (double-dose), jump the clock, and start/stop/edit a med in the private chat.</header>
+<div class="wrap">
+  <div class="phone">
+    <div class="bar">Pet Stuff › 🐱 Twiggy<small>topic · Rob, Danielle, Alex, Pet Meds Bot</small></div>
+    <div class="pin" id="pin" title="Pinned board — click to jump"></div>
+    <div class="msgs" id="topic"></div>
+    <div class="input"><input id="topicIn" placeholder="Message"></div>
+  </div>
+  <div class="phone">
+    <div class="bar">🤖 Pet Meds Bot<small>private chat</small></div>
+    <div class="msgs" id="dm"></div>
+    <div class="input"><input id="dmIn" placeholder="Message"></div>
+  </div>
+  <div class="side">
+    <h3>This variant</h3>
+    <div class="vdesc" id="vdesc"></div>
+    <h3>You are</h3>
+    <select id="me"><option>Rob</option><option>Danielle</option><option>Alex</option></select>
+    <span style="color:#7d8e9e">(Alex isn't an admin)</span>
+    <h3>Clock — <span id="clock"></span> Fri 10 Oct</h3>
+    <button data-t="540">⏩ 9:00 follow-up</button>
+    <button data-t="600">⏩ 10:00 late</button>
+    <button data-t="1080">⏩ 18:00 evening</button>
+    <button data-t="1140">⏩ 19:00</button>
+    <button data-t="1200">⏩ 20:00</button>
+    <button id="reset">↺ Reset</button>
+    <h3>Other topics (Faith)</h3>
+    <div id="other" style="color:#9fb3c8"></div>
+    <h3>State</h3>
+    <pre id="state"></pre>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<div class="switcher"><button id="prev">←</button><span id="vlabel"></span><button id="next">→</button></div>
+
+<script>
+const VARIANTS = {
+  A: { name: 'Checklist', desc: 'Reminder = a checklist. Each med is its own toggle button (☑ give → ☐ not now → ⏭ skip), then one big ✅ Given. Board = round-by-round list. Double-dose = the board itself asks. Admin = step-by-step wizard, one question per message.' },
+  B: { name: 'One button, options tucked away', desc: 'Reminder = just ✅ All given + ⚙️ Change. Change opens per-med ✅/✖/⏭ rows and the time. Board = all buttons, status lives in the button labels. Double-dose = a separate warning message. Admin = one "draft card" message edited in place.' },
+  C: { name: 'Per-med buttons, typed commands', desc: 'Reminder = one button per med (tap = that med is given now) plus ✅ All. "Different time" asks you to type it. Board = med-by-med with last given. Double-dose = a pop-up: tap again within 5 s. Admin = typed commands like /start, /stop, /edit.' },
+};
+const KEYS = Object.keys(VARIANTS);
+let V = new URLSearchParams(location.search).get('variant') || 'A';
+if (!VARIANTS[V]) V = 'A';
+
+const ADMINS = ['Rob', 'Danielle'];
+const GIVERS = ['Rob', 'Danielle', 'Alex'];
+const ROUNDS = {
+  Twiggy: { am: { name: 'Morning', icon: '☀️', due: 480, late: 600 }, pm: { name: 'Evening', icon: '🌙', due: 1080, late: 1200 } },
+  Faith: { am: { name: 'Morning', icon: '☀️', due: 480, late: 600 } },
+};
+const fmt = t => `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+const roundLabel = r => `${ROUNDS.Twiggy[r].icon} ${ROUNDS.Twiggy[r].name}`;
+
+let S;
+function init() {
+  S = {
+    now: 8 * 60 + 15, me: document.getElementById('me').value, seq: 1,
+    meds: [
+      { id: 'abx', pet: 'Twiggy', name: 'Antibiotic', kind: 'course', rounds: ['am', 'pm'], days: 10, day: 3, note: '1 tablet with food', active: true },
+      { id: 'eye', pet: 'Twiggy', name: 'Eye drops', kind: 'ongoing', rounds: ['am'], note: '2 drops each eye', active: true },
+      { id: 'alg', pet: 'Twiggy', name: 'Allergy med', kind: 'ongoing', rounds: ['pm'], note: '½ tablet', active: true },
+      { id: 'simp', pet: 'Twiggy', name: 'Simparica Trio', kind: 'monthly', last: '14 Sep', lastDays: 26, due: 'Tue 14 Oct', active: true },
+      { id: 'ear', pet: 'Twiggy', name: 'Ear cleaner', kind: 'as-needed', last: '2 Oct', active: true },
+      { id: 'simpF', pet: 'Faith', name: 'Simparica Trio', kind: 'monthly', last: '20 Sep', lastDays: 20, due: 'Mon 20 Oct', active: true },
+    ],
+    doses: [], topic: [], dm: [], other: [], fired: {}, pending: { topic: null, dm: null }, guard: null, tap: null, draft: null,
+  };
+  post('topic', { kind: 'board', pinned: true, time: 0 });
+  post('topic', { kind: 'reminder', r: 'am', ui: freshUi('am'), time: 480 });
+  S.fired['am-due'] = true;
+  post('dm', V === 'C' ? { kind: 'cmdHelp' } : { kind: 'dm', screen: 'menu' });
+}
+const freshUi = r => ({ sel: Object.fromEntries(medsIn(r).map(m => [m.id, 'give'])), at: null, mode: null });
+const medsIn = r => S.meds.filter(m => m.pet === 'Twiggy' && m.rounds && m.rounds.includes(r) && (m.active || S.doses.some(d => d.med === m.id && d.round === r)));
+const med = id => S.meds.find(m => m.id === id);
+function post(chat, m) { m.id = S.seq++; m.time ??= S.now; S[chat].push(m); return m; }
+function say(chat, text, extra = {}) { return post(chat, { kind: 'text', text, ...extra }); }
+function userSay(chat, text) { return post(chat, { kind: 'text', text, from: S.me }); }
+
+// ---------- dose model ----------
+function roundState(r) {
+  const meds = medsIn(r);
+  const ds = S.doses.filter(d => d.round === r);
+  const per = meds.map(m => {
+    const d = [...ds].reverse().find(d => d.med === m.id);
+    return { m, d, st: d ? (d.skipped ? 'skip' : 'given') : 'not' };
+  });
+  const first = ds.find(d => !d.skipped) || ds[0];
+  return { per, any: ds.length > 0, done: per.every(p => p.st !== 'not'), first, ds };
+}
+function logRound(r, sel, at) {
+  at ??= S.now;
+  for (const [id, s] of Object.entries(sel)) {
+    if (s === 'give') S.doses.push({ med: id, round: r, by: S.me, at, loggedAt: S.now });
+    if (s === 'skip') S.doses.push({ med: id, round: r, by: S.me, at, loggedAt: S.now, skipped: true });
+  }
+  afterLog(r);
+}
+function afterLog(r) {
+  if (roundState(r).done) S.topic = S.topic.filter(m => !(m.kind === 'followup' && m.r === r));
+}
+function logSingle(id, extraTxt) {
+  const m = med(id);
+  S.doses.push({ med: id, round: null, by: S.me, at: S.now, loggedAt: S.now });
+  if (m.kind === 'monthly') { m.last = '10 Oct'; m.lastDays = 0; m.due = 'Mon 10 Nov'; }
+  else m.last = 'today ' + fmt(S.now);
+  if (extraTxt !== false) say('topic', `✅ ${m.name} given by ${S.me} at ${fmt(S.now)}`);
+}
+const givenLine = (st, r) => {
+  const d = st.first, late = d.at > ROUNDS.Twiggy[r].late;
+  return `✅ Given${late ? ' late' : ''} by ${d.by} at ${fmt(d.at)}${d.loggedAt !== d.at ? ` (logged ${fmt(d.loggedAt)})` : ''}`;
+};
+const mark = s => ({ give: '☑', not: '☐', skip: '⏭' }[s]);
+const nextSel = s => ({ give: 'not', not: 'skip', skip: 'give' }[s]);
+const medLine = m => `${m.name}${m.kind === 'course' ? ` (day ${m.day}/${m.days})` : ''}${m.note ? ` — ${m.note}` : ''}`;
+
+function timeKb(m, back) {
+  const set = d => () => { m.ui.at = d === 0 ? null : S.now - d; m.ui.mode = back; };
+  return [
+    [['Now', set(0)], ['15 min ago', set(15)], ['30 min ago', set(30)]],
+    [['1 h ago', set(60)], ['2 h ago', set(120)], ['⌨️ Type a time', () => askTime(m, back)]],
+    [['« Back', () => { m.ui.mode = back; }]],
+  ];
+}
+function parseTime(s) {
+  const x = s.trim().toLowerCase().match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/);
+  if (!x) return null;
+  let h = +x[1]; const mi = +(x[2] || 0);
+  if (x[3] === 'pm' && h < 12) h += 12;
+  if (x[3] === 'am' && h === 12) h = 0;
+  return h * 60 + mi;
+}
+function askTime(m, back) {
+  const q = say('topic', `@${S.me.toLowerCase()} reply with when it was given — e.g. 7:45 or 7pm`, { reply: true });
+  S.pending.topic = txt => {
+    const t = parseTime(txt);
+    S.topic = S.topic.filter(x => x !== q);
+    if (t == null) { toast("Didn't get that time"); return; }
+    m.ui.at = t; m.ui.mode = back;
+    flash(m);
+  };
+  focusIn('topicIn');
+}
+
+// ---------- reminder renderers ----------
+const R = {};
+R.reminder = m => VREM[V](m);
+const VREM = {
+  A(m) {
+    const r = m.r, rd = ROUNDS.Twiggy[r], st = roundState(r);
+    if (st.any) {
+      return {
+        text: `${rd.icon} Twiggy — ${rd.name}\n${givenLine(st, r)}\n\n` + st.per.map(p => `${p.st === 'given' ? '✅' : p.st === 'skip' ? '⏭' : '⏳'} ${p.m.name}${p.st === 'skip' ? ' — skipped' : p.st === 'not' ? ' — not given yet' : ''}`).join('\n'),
+        kb: st.per.filter(p => p.st === 'not').map(p => [[`✅ ${p.m.name} given`, () => logRound(r, { [p.m.id]: 'give' })], ['⏭ Skip', () => logRound(r, { [p.m.id]: 'skip' })]]),
+      };
+    }
+    const text = `${rd.icon} Twiggy — ${rd.name} meds due\nLate after ${fmt(rd.late)}\n\n` + st.per.map(p => `${mark(m.ui.sel[p.m.id])} ${medLine(p.m)}`).join('\n');
+    if (m.ui.mode === 'time') return { text, kb: timeKb(m, null) };
+    return {
+      text,
+      kb: [
+        ...st.per.map(p => [[`${mark(m.ui.sel[p.m.id])} ${p.m.name}`, () => { m.ui.sel[p.m.id] = nextSel(m.ui.sel[p.m.id]); }]]),
+        [[`🕐 Given at: ${m.ui.at == null ? 'now' : fmt(m.ui.at)}`, () => { m.ui.mode = 'time'; }]],
+        [['✅ Given', () => logRound(r, m.ui.sel, m.ui.at)]],
+      ],
+    };
+  },
+  B(m) {
+    const r = m.r, rd = ROUNDS.Twiggy[r], st = roundState(r);
+    if (st.any) {
+      const left = st.per.filter(p => p.st === 'not');
+      const skipped = st.per.filter(p => p.st === 'skip');
+      return {
+        text: `${givenLine(st, r)}\n${rd.icon} Twiggy ${rd.name.toLowerCase()}: ${st.per.filter(p => p.st === 'given').map(p => p.m.name).join(', ') || '—'}` +
+          (skipped.length ? `\n⏭ Skipped: ${skipped.map(p => p.m.name).join(', ')}` : '') +
+          (left.length ? `\n⏳ Still to give: ${left.map(p => p.m.name).join(', ')}` : ''),
+        kb: left.length ? [[[`✅ ${left.map(p => p.m.name).join(' + ')} given`, () => logRound(r, Object.fromEntries(left.map(p => [p.m.id, 'give'])))]]] : [],
+      };
+    }
+    const text = `${rd.icon} Twiggy ${rd.name.toLowerCase()}: ${st.per.map(p => p.m.name).join(' + ')}\n` +
+      st.per.filter(p => p.m.note).map(p => `• ${p.m.name}: ${p.m.note}`).join('\n') + `\nLate after ${fmt(rd.late)}`;
+    if (m.ui.mode === 'time') return { text, kb: timeKb(m, 'opts') };
+    if (m.ui.mode === 'opts') {
+      const seg = (id, s, label) => [(m.ui.sel[id] === s ? '• ' : '') + label, () => { m.ui.sel[id] = s; }];
+      return {
+        text,
+        kb: [
+          ...st.per.map(p => [[p.m.name, () => {}], seg(p.m.id, 'give', '✅'), seg(p.m.id, 'not', '✖ not yet'), seg(p.m.id, 'skip', '⏭ skip')]),
+          [[`🕐 Given at ${m.ui.at == null ? fmt(S.now) + ' (now)' : fmt(m.ui.at)} ▸`, () => { m.ui.mode = 'time'; }]],
+          [['« Back', () => { m.ui = freshUi(r); }], ['✅ Log these', () => logRound(r, m.ui.sel, m.ui.at)]],
+        ],
+      };
+    }
+    return { text, kb: [[['✅ All given', () => logRound(r, Object.fromEntries(st.per.map(p => [p.m.id, 'give'])))], ['⚙️ Change…', () => { m.ui.mode = 'opts'; }]]] };
+  },
+  C(m) {
+    const r = m.r, rd = ROUNDS.Twiggy[r], st = roundState(r);
+    const at = m.ui.at;
+    const text = `${rd.icon} Twiggy ${rd.name.toLowerCase()} — late after ${fmt(rd.late)}${at != null && !st.done ? `\n🕐 Next tap logs as given at ${fmt(at)}` : ''}\n\n` +
+      st.per.map(p => p.st === 'given' ? `✅ ${p.m.name} — ${p.d.by} ${fmt(p.d.at)}` : p.st === 'skip' ? `⏭ ${p.m.name} — skipped by ${p.d.by}` : `⏳ ${medLine(p.m)}`).join('\n');
+    if (st.done) return { text: text + '\n\nAll done 🎉', kb: [] };
+    const one = (id, s) => () => { logRound(r, { [id]: s }, at); };
+    return {
+      text,
+      kb: [
+        ...st.per.filter(p => p.st === 'not').map(p => [[`✅ ${p.m.name}`, one(p.m.id, 'give')], ['⏭', one(p.m.id, 'skip')]]),
+        [['✅ All of them', () => logRound(r, Object.fromEntries(st.per.filter(p => p.st === 'not').map(p => [p.m.id, 'give'])), at)]],
+        [['🕐 Given at a different time', () => askTime(m, null)]],
+      ],
+    };
+  },
+};
+
+// ---------- board ----------
+R.board = m => VBOARD[V](m);
+function boardTapRound(r) {
+  const st = roundState(r);
+  if (st.any) return guard(`${roundLabel(r)} round`, st.first, () => logRound(r, Object.fromEntries(medsIn(r).map(x => [x.id, 'give']))));
+  logRound(r, Object.fromEntries(medsIn(r).map(x => [x.id, 'give'])));
+  if (!S.topic.some(x => x.kind === 'reminder' && x.r === r)) say('topic', `✅ Twiggy ${ROUNDS.Twiggy[r].name.toLowerCase()} given by ${S.me} at ${fmt(S.now)}`);
+}
+function boardTapMed(id) {
+  const m = med(id);
+  if (m.kind === 'monthly' && m.lastDays < 25) {
+    const d = S.doses.filter(x => x.med === id).pop();
+    return guard(m.name, d || { by: '(unknown)', at: 0, dateText: m.last }, () => logSingle(id));
+  }
+  logSingle(id);
+}
+const boardStatus = r => {
+  const st = roundState(r), rd = ROUNDS.Twiggy[r];
+  if (st.done) return `✅ ${st.first.by} ${fmt(st.first.at)}`;
+  if (st.any) return `◐ ${st.per.filter(p => p.st === 'not').map(p => p.m.name).join(', ')} left`;
+  if (S.now >= rd.late) return '⚠️ LATE';
+  if (S.now >= rd.due) return `⏳ due ${fmt(rd.due)}`;
+  return `🔜 ${fmt(rd.due)}`;
+};
+const VBOARD = {
+  A(m) {
+    const simp = med('simp'), ear = med('ear');
+    let text = `📋 Twiggy — today\n\n` +
+      ['am', 'pm'].map(r => `${roundLabel(r)} — ${boardStatus(r)}\n    ${medsIn(r).map(x => x.name).join(', ')}`).join('\n') +
+      `\n📅 ${simp.name} — ${simp.lastDays === 0 ? '✅ given today' : 'due ' + simp.due}\n💧 ${ear.name} — as needed, last ${ear.last}`;
+    if (S.guard) {
+      const g = S.guard;
+      return { text: text + `\n\n⚠️ ${g.what} already given by ${g.d.by}${g.d.dateText ? ' on ' + g.d.dateText : ' at ' + fmt(g.d.at)}. Log again?`, kb: [[['Yes, log again', () => { S.guard = null; g.go(); }], ['No', () => { S.guard = null; }]]] };
+    }
+    return {
+      text,
+      kb: [
+        [[`${roundLabel('am')}`, () => boardTapRound('am')], [`${roundLabel('pm')}`, () => boardTapRound('pm')]],
+        [[`📅 Simparica`, () => boardTapMed('simp')], [`💧 Ear cleaner`, () => boardTapMed('ear')]],
+      ],
+    };
+  },
+  B(m) {
+    const simp = med('simp'), ear = med('ear');
+    return {
+      text: `📋 Twiggy · tap to log`,
+      kb: [
+        ...['am', 'pm'].map(r => [[`${roundLabel(r)} · ${boardStatus(r)}`, () => boardTapRound(r)]]),
+        [[`📅 Simparica · ${simp.lastDays === 0 ? '✅ today' : 'due ' + simp.due}`, () => boardTapMed('simp')]],
+        [[`💧 Ear cleaner · last ${ear.last}`, () => boardTapMed('ear')]],
+      ],
+    };
+  },
+  C(m) {
+    const list = S.meds.filter(x => x.active && x.pet === 'Twiggy');
+    const line = x => {
+      if (x.rounds) return `${x.name}${x.kind === 'course' ? ` (day ${x.day}/${x.days})` : ''}\n    ` + x.rounds.map(r => {
+        const p = roundState(r).per.find(p => p.m.id === x.id);
+        const icon = ROUNDS.Twiggy[r].icon;
+        return p.st === 'given' ? `${icon}✅ ${p.d.by} ${fmt(p.d.at)}` : p.st === 'skip' ? `${icon}⏭` : `${icon}${S.now >= ROUNDS.Twiggy[r].late ? '⚠️' : '⏳'}`;
+      }).join('   ');
+      if (x.kind === 'monthly') return `${x.name} (monthly)\n    last ${x.last} · ${x.lastDays === 0 ? 'next ' + x.due : 'due ' + x.due}`;
+      return `${x.name} (as needed)\n    last ${x.last}`;
+    };
+    const kb = m.more
+      ? [...list.filter(x => !x.rounds).map(x => [[`Log ${x.name}`, () => { m.more = false; boardTapMed(x.id); }]]), [['« Back', () => { m.more = false; }]]]
+      : [[[`Log ${roundLabel('am')}`, () => boardTapRound('am')], [`Log ${roundLabel('pm')}`, () => boardTapRound('pm')]], [['Other meds ▸', () => { m.more = true; }]]];
+    return { text: `📋 Twiggy — meds\n\n` + list.map(line).join('\n'), kb };
+  },
+};
+
+// ---------- double-dose guard, three ways ----------
+function guard(what, d, go) {
+  const when = d.dateText ? `on ${d.dateText}` : `at ${fmt(d.at)}`;
+  if (V === 'A') { S.guard = { what, d, go }; return; }
+  if (V === 'B') {
+    const g = say('topic', `⚠️ ${what} was already given by ${d.by} ${when}.\nLog it again?`);
+    g.kb = [[['Yes, log again', () => { S.topic = S.topic.filter(x => x !== g); go(); }], ['Cancel', () => { S.topic = S.topic.filter(x => x !== g); }]]];
+    return;
+  }
+  const key = what;
+  if (S.tap && S.tap.key === key && Date.now() < S.tap.until) { S.tap = null; go(); toast('Logged again.'); return; }
+  S.tap = { key, until: Date.now() + 5000 };
+  toast(`Already given by ${d.by} ${when}.\nTap again within 5 s to log it again.`);
+}
+
+// ---------- clock: due / follow-up / late ----------
+function setTime(t) {
+  for (const r of ['am', 'pm']) {
+    const rd = ROUNDS.Twiggy[r], half = rd.due + (rd.late - rd.due) / 2;
+    const steps = [[rd.due, 'due'], [half, 'fu'], [rd.late, 'late']];
+    for (const [at, kind] of steps) {
+      const k = `${r}-${kind}`;
+      if (S.fired[k] || t < at) continue;
+      S.fired[k] = true;
+      const st = roundState(r);
+      if (kind === 'due' && !st.any) post('topic', { kind: 'reminder', r, ui: freshUi(r), time: at });
+      if (kind === 'fu' && !st.done) post('topic', { kind: 'followup', r, time: at });
+      if (kind === 'late' && !st.done) {
+        const left = st.per.filter(p => p.st === 'not').map(p => p.m.name).join(', ');
+        say('topic', `⚠️ LATE — Twiggy ${rd.name.toLowerCase()}: ${left} not given`, { time: at });
+      }
+    }
+  }
+  S.now = t;
+}
+R.followup = m => {
+  const st = roundState(m.r), left = st.per.filter(p => p.st === 'not').map(p => p.m.name);
+  const rd = ROUNDS.Twiggy[m.r];
+  return { text: `⏰ ${GIVERS.map(g => '@' + g.toLowerCase()).join(' ')}\nTwiggy ${rd.name.toLowerCase()}: ${left.join(', ')} still not given (late at ${fmt(rd.late)})`, kb: [] };
+};
+R.text = m => ({ text: m.text, kb: m.kb || [] });
+
+// ---------- admin: shared steps ----------
+const KINDS = ['ongoing', 'course', 'monthly', 'as-needed'];
+const isAdmin = () => ADMINS.includes(S.me);
+function announce(pet, text) {
+  if (pet === 'Twiggy') say('topic', `📣 ${text}`); else S.other.push(`[${pet} topic] 📣 ${text}`);
+}
+function describe(d) {
+  const rr = d.rounds && d.rounds.length ? d.rounds.map(r => ROUNDS[d.pet][r].name.toLowerCase()).join(' + ') : '';
+  return d.kind === 'course' ? `${d.days} days, ${rr}` : d.kind === 'ongoing' ? `daily, ${rr}` : d.kind;
+}
+function startMed(d) {
+  const m = { id: 'm' + S.seq++, pet: d.pet, name: d.name, kind: d.kind, note: d.note, active: true };
+  if (d.kind === 'course' || d.kind === 'ongoing') m.rounds = d.rounds;
+  if (d.kind === 'course') { m.days = d.days; m.day = 1; }
+  if (d.kind === 'monthly') { m.last = '—'; m.lastDays = 99; m.due = 'today'; }
+  if (d.kind === 'as-needed') m.last = 'never';
+  S.meds.push(m);
+  announce(d.pet, `${S.me} started ${d.name} for ${d.pet}: ${describe(d)}${d.note ? ` — "${d.note}"` : ''}`);
+}
+function stopMed(id) { const m = med(id); m.active = false; announce(m.pet, `${S.me} stopped ${m.pet}'s ${m.name}`); }
+function editMed(id, field, val) {
+  const m = med(id); m[field] = val;
+  const shown = field === 'rounds' ? val.map(r => ROUNDS[m.pet][r].name.toLowerCase()).join(' + ') : field === 'days' ? `${val} days` : `"${val}"`;
+  announce(m.pet, `${S.me} changed ${m.pet}'s ${m.name}: ${field === 'note' ? 'dose note' : field} → ${shown}`);
+}
+const activeMeds = () => S.meds.filter(m => m.active);
+const draftCard = d => `Pet: ${d.pet || '—'}\nName: ${d.name || '—'}\nKind: ${d.kind || '—'}` +
+  (d.kind === 'course' || d.kind === 'ongoing' ? `\nRounds: ${d.rounds.length ? d.rounds.map(r => ROUNDS[d.pet || 'Twiggy'][r].name).join(' + ') : '—'}` : '') +
+  (d.kind === 'course' ? `\nDays: ${d.days || '—'}` : '') + `\nDose note: ${d.note || '—'}`;
+
+// Screens return {text, kb}. Variant A: each answer freezes the message and posts the next one (wizard).
+// Variant B: one message, its screen swaps in place (draft card is the hub).
+function go(m, next, echo) {
+  if (V === 'A') {
+    const snap = R.dm(m); m.frozen = { text: snap.text, kb: [] };
+    if (echo) userSay('dm', echo);
+    if (next) post('dm', { kind: 'dm', screen: next, target: m.target, field: m.field });
+  } else m.screen = next || 'menu';
+}
+function typed(m, prompt, cb) {
+  S.pending.dm = txt => cb(txt);
+  m.prompt = prompt; focusIn('dmIn');
+}
+const SCREENS = {
+  menu: m => isAdmin()
+    ? { text: `Hi ${S.me}. What do you want to change?`, kb: [[['➕ Start a med', () => { S.draft = { rounds: [] }; go(m, V === 'A' ? 'pet' : 'card', 'Start a med'); }]], [['⏹ Stop a med', () => go(m, 'stopPick', 'Stop a med')]], [['✏️ Edit a med', () => go(m, 'editPick', 'Edit a med')]]] }
+    : { text: `Sorry ${S.me} — only admins (${ADMINS.join(', ')}) can change meds.\nYou can still log doses in Pet Stuff.`, kb: [] },
+  // --- wizard steps (A) and sub-pickers (B) ---
+  pet: m => ({ text: V === 'A' ? 'Which pet?' : draftCard(S.draft) + '\n\nWhich pet?', kb: [Object.keys(ROUNDS).map(p => [p, () => { S.draft.pet = p; go(m, V === 'A' ? 'name' : 'card', p); }])] }),
+  name: m => {
+    if (!m.prompt) typed(m, 1, txt => { S.draft.name = txt; S.pending.dm = null; m.prompt = 0; go(m, V === 'A' ? 'kind' : 'card', V === 'A' ? null : null); if (V === 'B') userSay('dm', txt); });
+    return { text: (V === 'A' ? '' : draftCard(S.draft) + '\n\n') + 'Type the med name (e.g. Antibiotic).', kb: V === 'B' ? [[['« Back', () => { S.pending.dm = null; m.prompt = 0; m.screen = 'card'; }]]] : [] };
+  },
+  kind: m => ({ text: (V === 'A' ? '' : draftCard(S.draft) + '\n\n') + 'What kind?', kb: [KINDS.slice(0, 2).map(k => [k, () => pickKind(m, k)]), KINDS.slice(2).map(k => [k, () => pickKind(m, k)])] }),
+  rounds: m => ({
+    text: (V === 'A' ? '' : draftCard(S.draft) + '\n\n') + 'Which rounds? Tap to toggle.',
+    kb: [Object.entries(ROUNDS[S.draft.pet || 'Twiggy']).map(([r, rd]) => [`${S.draft.rounds.includes(r) ? '☑' : '☐'} ${rd.icon} ${rd.name}`, () => { const a = S.draft.rounds; a.includes(r) ? a.splice(a.indexOf(r), 1) : a.push(r); }]),
+      [['Done ▸', () => go(m, V === 'A' ? (S.draft.kind === 'course' ? 'days' : 'note') : 'card', S.draft.rounds.map(r => ROUNDS[S.draft.pet][r].name).join(' + '))]]],
+  }),
+  days: m => ({ text: (V === 'A' ? '' : draftCard(S.draft) + '\n\n') + 'How many days?', kb: [[5, 7, 10, 14].map(n => [String(n), () => { S.draft.days = n; go(m, V === 'A' ? 'note' : 'card', `${n} days`); }]), [[21, 28, 30].map(n => [String(n), () => { S.draft.days = n; go(m, V === 'A' ? 'note' : 'card', `${n} days`); }])].flat()] }),
+  note: m => {
+    if (!m.prompt) typed(m, 1, txt => { S.draft.note = txt; S.pending.dm = null; m.prompt = 0; if (V === 'B') userSay('dm', txt); go(m, V === 'A' ? 'confirm' : 'card'); });
+    return { text: (V === 'A' ? '' : draftCard(S.draft) + '\n\n') + 'Type a dose note shown on reminders (e.g. "2 drops each eye"), or skip.', kb: [[['No note', () => { S.pending.dm = null; m.prompt = 0; go(m, V === 'A' ? 'confirm' : 'card', 'No note'); }]]] };
+  },
+  confirm: m => ({ text: `Start this med?\n\n${draftCard(S.draft)}`, kb: [[['✅ Start', () => { startMed(S.draft); go(m, null, 'Start'); say('dm', '✅ Started. Announced in the pet\'s topic.'); post('dm', { kind: 'dm', screen: 'menu' }); }], ['✖ Cancel', () => { go(m, 'menu', 'Cancel'); }]]] }),
+  // --- B hub ---
+  card: m => {
+    const d = S.draft, ready = d.pet && d.name && d.kind && (!['course', 'ongoing'].includes(d.kind) || d.rounds.length) && (d.kind !== 'course' || d.days);
+    const f = (label, sc) => [label, () => { m.screen = sc; }];
+    const rows = [[f(`🐾 Pet ▸`, 'pet'), f('✏️ Name', 'name'), f('Kind ▸', 'kind')]];
+    if (d.kind === 'course' || d.kind === 'ongoing') rows.push([f('Rounds ▸', 'rounds'), ...(d.kind === 'course' ? [f('Days ▸', 'days')] : []), f('✏️ Dose note', 'note')]);
+    else rows.push([f('✏️ Dose note', 'note')]);
+    rows.push([[ready ? '✅ Start' : '✅ Start (fill in the rest)', () => { if (!ready) return toast('Fill in the missing fields first'); startMed(d); m.frozen = { text: `✅ Started\n\n${draftCard(d)}`, kb: [] }; post('dm', { kind: 'dm', screen: 'menu' }); }], ['✖ Cancel', () => { m.screen = 'menu'; }]]);
+    return { text: `New med (draft)\n\n${draftCard(d)}`, kb: rows };
+  },
+  // --- stop / edit ---
+  stopPick: m => ({ text: 'Stop which med?', kb: [...activeMeds().map(x => [[`${x.pet}: ${x.name}`, () => { m.target = x.id; go(m, 'stopConfirm', `${x.pet}: ${x.name}`); }]]), [['« Back', () => go(m, 'menu', 'Back')]]] }),
+  stopConfirm: m => { const x = med(m.target); return { text: `Stop ${x.pet}'s ${x.name} now? Reminders for it end straight away.`, kb: [[['⏹ Yes, stop it', () => { stopMed(x.id); go(m, null, 'Yes, stop it'); say('dm', `⏹ Stopped ${x.name}.`); post('dm', { kind: 'dm', screen: 'menu' }); }], ['No', () => go(m, 'menu', 'No')]]] }; },
+  editPick: m => ({ text: 'Edit which med?', kb: [...activeMeds().filter(x => x.kind === 'course' || x.kind === 'ongoing' || x.note !== undefined).map(x => [[`${x.pet}: ${x.name}`, () => { m.target = x.id; go(m, 'editField', `${x.pet}: ${x.name}`); }]]), [['« Back', () => go(m, 'menu', 'Back')]]] }),
+  editField: m => {
+    const x = med(m.target);
+    return {
+      text: `${x.pet}'s ${x.name}\n` + (x.kind === 'course' ? `Days: ${x.days} (on day ${x.day})\n` : '') + (x.rounds ? `Rounds: ${x.rounds.map(r => ROUNDS[x.pet][r].name).join(' + ')}\n` : '') + `Dose note: ${x.note || '—'}\n\nChange what?`,
+      kb: [[...(x.kind === 'course' ? [['Days', () => { m.field = 'days'; go(m, 'editDays', 'Days'); }]] : []), ...(x.rounds ? [['Rounds', () => { m.field = 'rounds'; m.tmp = [...x.rounds]; go(m, 'editRounds', 'Rounds'); }]] : []), ['Dose note', () => go(m, 'editNote', 'Dose note')]], [['« Back', () => go(m, 'menu', 'Back')]]],
+    };
+  },
+  editDays: m => { const x = med(m.target); const set = n => () => { editMed(x.id, 'days', n); go(m, null, `${n}`); say('dm', `✅ ${x.name} now runs ${n} days.`); post('dm', { kind: 'dm', screen: 'menu' }); }; return { text: `${x.name} has ${x.days} days. New total?`, kb: [[x.days - 3, x.days + 3, x.days + 4, x.days + 7].map(n => [String(n), set(n)])] }; },
+  editRounds: m => {
+    const x = med(m.target); m.tmp ??= [...x.rounds];
+    return { text: `Which rounds for ${x.name}?`, kb: [Object.entries(ROUNDS[x.pet]).map(([r, rd]) => [`${m.tmp.includes(r) ? '☑' : '☐'} ${rd.icon} ${rd.name}`, () => { m.tmp.includes(r) ? m.tmp.splice(m.tmp.indexOf(r), 1) : m.tmp.push(r); }]), [['💾 Save', () => { editMed(x.id, 'rounds', [...m.tmp]); go(m, null, 'Save'); say('dm', '✅ Saved.'); post('dm', { kind: 'dm', screen: 'menu' }); }]]] };
+  },
+  editNote: m => {
+    const x = med(m.target);
+    if (!m.prompt) typed(m, 1, txt => { S.pending.dm = null; m.prompt = 0; editMed(x.id, 'note', txt); if (V === 'B') userSay('dm', txt); go(m, null); say('dm', '✅ Dose note saved.'); post('dm', { kind: 'dm', screen: 'menu' }); });
+    return { text: `Current note: ${x.note || '—'}\nType the new dose note.`, kb: [] };
+  },
+};
+function pickKind(m, k) {
+  S.draft.kind = k;
+  if (V === 'A') go(m, k === 'course' || k === 'ongoing' ? 'rounds' : 'note', k);
+  else m.screen = 'card';
+}
+R.dm = m => SCREENS[m.screen](m);
+
+// --- variant C: typed commands ---
+R.cmdHelp = () => ({
+  text: isAdmin()
+    ? `Hi ${S.me}. Commands:\n\n/start Twiggy Antibiotic course 10 morning evening "1 tablet with food"\n/start Faith Simparica monthly\n/stop — pick a med to stop\n/edit Antibiotic days 14\n/edit Eye drops note "1 drop each eye"\n/edit Antibiotic rounds morning\n/meds — list what's running`
+    : `Sorry ${S.me} — only admins (${ADMINS.join(', ')}) can change meds.`,
+  kb: [],
+});
+function runCommand(txt) {
+  if (!isAdmin()) return say('dm', 'Only admins can change meds.');
+  const note = (txt.match(/"([^"]*)"/) || [])[1];
+  const words = txt.replace(/"[^"]*"/, '').trim().split(/\s+/);
+  const cmd = words.shift();
+  if (cmd === '/meds') return say('dm', activeMeds().map(x => `• ${x.pet}: ${x.name} (${x.kind}${x.days ? `, day ${x.day}/${x.days}` : ''})`).join('\n'));
+  if (cmd === '/stop') {
+    const m = say('dm', 'Stop which med?');
+    m.kb = activeMeds().map(x => [[`${x.pet}: ${x.name}`, () => { m.kb = [[[`⏹ Yes, stop ${x.name}`, () => { stopMed(x.id); m.text = `⏹ Stopped ${x.pet}'s ${x.name}.`; m.kb = []; }], ['No', () => { m.text = 'OK, nothing changed.'; m.kb = []; }]]]; m.text = `Stop ${x.pet}'s ${x.name} now?`; }]]);
+    return;
+  }
+  if (cmd === '/start') {
+    const d = { rounds: [], note };
+    const rest = [];
+    for (const w of words) {
+      const lw = w.toLowerCase();
+      if (ROUNDS[w]) d.pet = w;
+      else if (KINDS.includes(lw)) d.kind = lw;
+      else if (/^\d+$/.test(w)) d.days = +w;
+      else if (lw === 'days') continue;
+      else if (['morning', 'evening'].includes(lw)) d.rounds.push(lw === 'morning' ? 'am' : 'pm');
+      else rest.push(w);
+    }
+    d.name = rest.join(' ');
+    const missing = ['pet', 'name', 'kind'].filter(k => !d[k]).concat(d.kind === 'course' && !d.days ? ['days'] : []).concat(['course', 'ongoing'].includes(d.kind) && !d.rounds.length ? ['rounds'] : []);
+    if (missing.length) return say('dm', `Missing: ${missing.join(', ')}. Example:\n/start Twiggy Antibiotic course 10 morning evening "1 tablet with food"`);
+    const m = say('dm', `Start this?\n\n${draftCard(d)}`);
+    m.kb = [[['✅ Start', () => { startMed(d); m.text = `✅ Started\n\n${draftCard(d)}`; m.kb = []; }], ['✖ Cancel', () => { m.text = 'Cancelled.'; m.kb = []; }]]];
+    return;
+  }
+  if (cmd === '/edit') {
+    const fi = words.findIndex(w => ['days', 'note', 'rounds'].includes(w.toLowerCase()));
+    if (fi < 1) return say('dm', 'Try: /edit Antibiotic days 14');
+    const name = words.slice(0, fi).join(' ').toLowerCase(), field = words[fi].toLowerCase();
+    const x = activeMeds().find(m => m.name.toLowerCase() === name);
+    if (!x) return say('dm', `No running med called "${name}". /meds lists them.`);
+    let val = field === 'note' ? note : field === 'days' ? +words[fi + 1] : words.slice(fi + 1).map(w => w.toLowerCase() === 'morning' ? 'am' : 'pm');
+    if (val == null || (field === 'days' && !val)) return say('dm', 'Missing the new value.');
+    editMed(x.id, field, val); return say('dm', `✅ ${x.name} updated.`);
+  }
+  say('dm', "I don't know that one. Commands are /start, /stop, /edit, /meds.");
+}
+
+// ---------- rendering ----------
+function render() {
+  document.getElementById('vlabel').textContent = `${V} — ${VARIANTS[V].name}`;
+  document.getElementById('vdesc').textContent = VARIANTS[V].desc;
+  document.getElementById('clock').textContent = fmt(S.now);
+  document.getElementById('me').value = S.me;
+  for (const chat of ['topic', 'dm']) {
+    const el = document.getElementById(chat);
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    el.innerHTML = '';
+    for (const m of S[chat]) {
+      const { text, kb } = m.frozen || R[m.kind](m);
+      const wrap = document.createElement('div');
+      wrap.className = 'msg' + (m.from ? ' me' : '');
+      const b = document.createElement('div');
+      b.className = 'bubble'; b.id = 'm' + m.id;
+      b.innerHTML = `<div class="from">${m.from || 'Pet Meds Bot'}${m.pinned ? ' · 📌 pinned' : ''}</div>`;
+      b.appendChild(document.createTextNode(text));
+      const t = document.createElement('div'); t.className = 'time'; t.textContent = m.pinned ? 'edited' : fmt(m.time); b.appendChild(t);
+      wrap.appendChild(b);
+      if (kb && kb.length) {
+        const k = document.createElement('div'); k.className = 'kb';
+        for (const row of kb) {
+          const r = document.createElement('div'); r.className = 'row';
+          for (const [label, fn] of row) {
+            const btn = document.createElement('button'); btn.textContent = label;
+            btn.onclick = () => { fn(); render(); };
+            r.appendChild(btn);
+          }
+          k.appendChild(r);
+        }
+        wrap.appendChild(k);
+      }
+      el.appendChild(wrap);
+    }
+    if (atBottom) el.scrollTop = el.scrollHeight;
+  }
+  const board = S.topic.find(m => m.kind === 'board');
+  document.getElementById('pin').textContent = '📌 ' + R.board(board).text.split('\n').slice(0, 3).join(' · ');
+  document.getElementById('topicIn').placeholder = S.pending.topic ? 'Reply with a time, e.g. 7:45 or 7pm' : 'Message';
+  document.getElementById('dmIn').placeholder = S.pending.dm ? 'Type here and press Enter' : V === 'C' ? 'Type a command, e.g. /start …' : 'Message';
+  document.getElementById('other').textContent = S.other.join('\n') || '—';
+  document.getElementById('state').textContent = JSON.stringify({
+    now: fmt(S.now), me: S.me,
+    doses: S.doses.map(d => `${med(d.med).name}${d.round ? ' [' + d.round + ']' : ''} ${d.skipped ? 'SKIPPED' : 'given'} by ${d.by} at ${fmt(d.at)}${d.loggedAt !== d.at ? ' (logged ' + fmt(d.loggedAt) + ')' : ''}`),
+    activeMeds: activeMeds().map(m => `${m.pet}: ${m.name} — ${m.kind}${m.rounds ? ' ' + m.rounds.join('+') : ''}${m.days ? ` ${m.day}/${m.days}d` : ''}${m.note ? ` "${m.note}"` : ''}`),
+  }, null, 1);
+}
+function flash(m) { setTimeout(() => { const b = document.getElementById('m' + m.id); if (b) { b.classList.add('flash'); b.scrollIntoView({ block: 'center' }); setTimeout(() => b.classList.remove('flash'), 1200); } }, 0); }
+function toast(t) { const el = document.getElementById('toast'); el.textContent = t; el.style.whiteSpace = 'pre-wrap'; el.style.display = 'block'; clearTimeout(toast.h); toast.h = setTimeout(() => el.style.display = 'none', 2600); }
+function focusIn(id) { setTimeout(() => document.getElementById(id).focus(), 0); }
+
+// ---------- wiring ----------
+for (const [id, chat] of [['topicIn', 'topic'], ['dmIn', 'dm']]) {
+  document.getElementById(id).addEventListener('keydown', e => {
+    if (e.key !== 'Enter' || !e.target.value.trim()) return;
+    const txt = e.target.value.trim(); e.target.value = '';
+    if (S.pending[chat]) { const p = S.pending[chat]; if (chat === 'topic') { userSay('topic', txt); S.pending.topic = null; } else if (V === 'A') userSay('dm', txt); p(txt); }
+    else { userSay(chat, txt); if (chat === 'dm' && V === 'C') runCommand(txt); }
+    render();
+  });
+}
+document.querySelectorAll('[data-t]').forEach(b => b.onclick = () => { setTime(+b.dataset.t); render(); });
+document.getElementById('reset').onclick = () => { init(); render(); };
+document.getElementById('me').onchange = e => { S.me = e.target.value; render(); };
+document.getElementById('pin').onclick = () => flash(S.topic.find(m => m.kind === 'board'));
+function setVariant(k) { V = k; const u = new URL(location); u.searchParams.set('variant', k); history.replaceState(null, '', u); init(); render(); }
+const step = d => setVariant(KEYS[(KEYS.indexOf(V) + d + KEYS.length) % KEYS.length]);
+document.getElementById('prev').onclick = () => step(-1);
+document.getElementById('next').onclick = () => step(1);
+document.addEventListener('keydown', e => { if (e.target.matches('input, textarea, select, [contenteditable]')) return; if (e.key === 'ArrowLeft') step(-1); if (e.key === 'ArrowRight') step(1); });
+init(); render();
+</script>
+</body>
+</html>
