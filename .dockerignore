@@ -1,0 +1,15 @@
+.git
+.claude
+.scratch
+node_modules
+dist
+test
+scripts
+assets
+*.md
+.env
+.env.*
+settings.yaml
+docker-compose*.yml
+Dockerfile
+.dockerignore

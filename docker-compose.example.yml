@@ -1,0 +1,28 @@
+# Copy to docker-compose.yml and adjust. Long polling needs no inbound traffic:
+# no ports, no Traefik labels.
+services:
+  pet-meds-bot:
+    build:
+      context: .
+      args:
+        PG_MAJOR: "17"          # = your Postgres server's major version (SELECT version();)
+    image: pet-meds-bot
+    container_name: pet-meds-bot
+    restart: unless-stopped
+    env_file: .env              # BOT_TOKEN, DATABASE_URL, LOG_LEVEL
+    environment:
+      SETTINGS_PATH: /config/settings.yaml
+    volumes:
+      # Edit settings.yaml on the host, then `docker compose restart pet-meds-bot`.
+      # The container runs as uid 1000, so the file must be readable by everyone (chmod 644).
+      - ./settings.yaml:/config/settings.yaml:ro
+    # Join the docker network your existing Postgres is on, so DATABASE_URL can say
+    # host "postgres" (or whatever the container is called). Find it with:
+    #   docker inspect <postgres-container> --format '{{json .NetworkSettings.Networks}}'
+    # networks:
+    #   - postgres_net
+    #
+    # networks:
+    #   postgres_net:
+    #     external: true
+    #     name: <the network name from the command above>
