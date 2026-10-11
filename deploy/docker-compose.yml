@@ -1,0 +1,30 @@
+# Pet Meds bot on the VPS, in the same /docker/<stack>/ convention as Caballus
+# (Traefik lives at /docker/traefik, this at /docker/pet-meds).
+#
+# Long polling needs no inbound traffic, so there are no ports and no Traefik
+# labels. The only wiring is the network the existing Postgres is on, so
+# DATABASE_URL can say host "postgres".
+name: pet-meds
+
+services:
+  bot:
+    # Named by commit rather than by `latest`, and rewritten by deploy.sh, so
+    # this file's .env is also the record of what is actually running.
+    image: ${PET_MEDS_IMAGE}
+    container_name: pet-meds-bot
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      SETTINGS_PATH: /config/settings.yaml
+    volumes:
+      # Edited by hand on the box. The container runs as uid 1000, so the file
+      # must be world-readable (chmod 644). Restart the bot to pick up changes.
+      - ./settings.yaml:/config/settings.yaml:ro
+    networks:
+      - postgres
+
+networks:
+  postgres:
+    external: true
+    # The network the existing Postgres container is on (see .env.tpl).
+    name: ${POSTGRES_NETWORK}

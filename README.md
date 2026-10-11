@@ -96,6 +96,10 @@ Times are 24h and in quotes: `"08:00"`. A typo in a key name is an error, on pur
 
 ### 6. Build and run
 
+**The normal way is GitHub → your VPS, the same way Caballus does it. See [docs/deploy.md](docs/deploy.md).** Push to `main`, GitHub builds the image and stores it on ghcr.io, and you press **Run workflow** on `deploy` to put it live.
+
+To run it by hand instead (no GitHub), use the example compose file:
+
 ```bash
 cp .env.example .env                              # then fill in BOT_TOKEN and DATABASE_URL
 cp docker-compose.example.yml docker-compose.yml  # then set PG_MAJOR and the Postgres network

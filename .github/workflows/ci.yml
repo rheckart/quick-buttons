@@ -1,0 +1,52 @@
+name: ci
+
+# Push alone answers a push. `deploy.yml` is the one a person presses:
+# publishing an image never deploys it.
+on:
+  push:
+
+env:
+  IMAGE: ghcr.io/rheckart/quick-buttons
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm build
+      # PGlite runs real Postgres in-process, so no database service is needed.
+      - run: pnpm test
+
+  publish:
+    needs: verify
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # The built-in token writes packages under this repository's owner.
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+      - name: Sign in to the registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Build and push
+        # Two tags for one image: the commit (what a deploy names and a rollback
+        # returns to) and `latest` (a convenience for a human typing the form).
+        # PG_MAJOR sets the pg_dump version: a newer client can dump an older
+        # server, never the reverse. Set the repo variable PG_MAJOR to match the
+        # server if you want them equal.
+        run: |
+          TAG="${GITHUB_SHA:0:12}"
+          docker build --build-arg PG_MAJOR="${{ vars.PG_MAJOR || '18' }}" -t "$IMAGE:$TAG" -t "$IMAGE:latest" .
+          docker push "$IMAGE:$TAG"
+          docker push "$IMAGE:latest"
+          echo "pushed $IMAGE:$TAG"

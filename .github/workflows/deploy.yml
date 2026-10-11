@@ -1,0 +1,41 @@
+# Taking the new image live is a person's act, not a push's. Press this, name
+# the tag, and it SSHes to the VPS and runs /docker/pet-meds/deploy.sh <tag>.
+# The script lives on the box so a deploy stays runnable over SSH when CI is
+# the thing that is broken. Runbook: docs/deploy.md.
+name: deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'The image tag to deploy: a twelve-character commit, or latest'
+        required: true
+        default: latest
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: The key and the host it is allowed to reach
+        # The host key is a repository VARIABLE, not a secret: a public key is
+        # public, and pinning it means a recreated box fails the deploy loudly
+        # instead of trusting whatever answers.
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST: ${{ vars.VPS_HOST }}
+          VPS_HOST_KEY: ${{ vars.VPS_HOST_KEY }}
+        run: |
+          test -n "$VPS_HOST" && test -n "$VPS_HOST_KEY" || { echo "set repo variables VPS_HOST and VPS_HOST_KEY (docs/deploy.md)"; exit 1; }
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          printf '%s %s\n' "$VPS_HOST" "$VPS_HOST_KEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy
+        env:
+          VPS_HOST: ${{ vars.VPS_HOST }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          ssh -i ~/.ssh/id_deploy -o BatchMode=yes "root@$VPS_HOST" \
+            /docker/pet-meds/deploy.sh "'$TAG'"
