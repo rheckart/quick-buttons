@@ -1,0 +1,50 @@
+# Pet Meds bot settings. Copy to settings.yaml (or point SETTINGS_PATH at it) and edit.
+# The bot checks this file at start-up and refuses to start if anything is wrong,
+# listing every problem. Restart the bot after editing. Typos in key names are errors.
+# Times are 24h "HH:MM" in quotes; ids are plain numbers.
+
+# Every time below, and every reminder, uses this zone (an IANA name).
+timezone: America/New_York
+
+# The "Pet Stuff" supergroup. Group ids are negative. PLACEHOLDER: replace.
+group_chat_id: -1001234567890
+
+# Telegram user ids that get the setup menu (start/stop/edit meds, fix old logs).
+# At least one. PLACEHOLDERS: replace.
+admins:
+  - 111111111   # Rob
+  - 222222222   # Danielle
+
+# People the bot @mentions in follow-ups. PLACEHOLDERS: replace.
+givers:
+  - { user_id: 111111111, name: Rob }
+  - { user_id: 222222222, name: Danielle }
+
+# Optional. No reminders are sent in this window (it may cross midnight). Default 22:00-07:00.
+quiet_hours:
+  start: "22:00"
+  end: "07:00"
+
+# Optional. Nightly pg_dump goes to this private chat at this time.
+# Defaults: the first admin, 03:00.
+backup:
+  chat_id: 111111111
+  time: "03:00"
+
+pets:
+  - name: Twiggy
+    topic_id: 11            # message_thread_id of Twiggy's topic. PLACEHOLDER: replace.
+    rounds:                 # a pet can have any number; they are sorted by due time
+      - name: Morning
+        due: "08:00"        # reminder goes out here
+        late_after: "10:00" # must be after due; the round counts as late after this
+        # emoji: ☀️         # optional; default by due time: ☀️ before 12:00, 🌤️ before 17:00, 🌙 after
+      - name: Evening
+        due: "18:00"
+        late_after: "20:00"
+    # Optional. When monthly-med reminders fire on the due day.
+    # Default: earliest and latest round due (09:00 and 18:00 if fewer than 2 rounds).
+    # monthly_reminders: { morning: "08:00", evening: "18:00" }
+
+  - name: Faith             # no daily rounds, only monthly meds
+    topic_id: 22            # PLACEHOLDER: replace.
