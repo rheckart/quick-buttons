@@ -106,6 +106,6 @@ export function askPrompt(field: TypedField): string {
     case 'doseNote': return 'Type the dose note, e.g. "2 drops each eye". Send - to remove it.';
     case 'days': return 'Type the number of days.';
     case 'lastGiven': return 'Type the date it was last given, e.g. "2 Oct" or "3 days ago". Send - to clear it.';
-    case 'startedOn': return 'Type the date the course started, e.g. "2 Oct" or "yesterday". Send - for "first dose".';
+    case 'startedOn': return 'Type the date the course started, e.g. "2 Oct" or "yesterday". This only sets day 1; it does not log a dose. Send - to start the count at the first logged dose.';
   }
 }
