@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ---- base: Node + pnpm (package.json has no "packageManager" field, so pin pnpm here)
-FROM node:22-slim AS base
+FROM node:22-slim@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d AS base
 ARG PNPM_VERSION=11.10.0
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
@@ -20,7 +20,7 @@ COPY src ./src
 RUN pnpm build
 
 # ---- runtime: Node + pg_dump (for the nightly backup), non-root
-FROM node:22-slim AS runtime
+FROM node:22-slim@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d AS runtime
 # pg_dump refuses to dump a server NEWER than itself: set this to the server's major version
 # (SELECT version();) and rebuild with: docker compose build --build-arg PG_MAJOR=16
 ARG PG_MAJOR=17
