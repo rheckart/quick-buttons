@@ -50,8 +50,11 @@ fi
 STARTED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 say "starting the bot"
 # Same service name, so compose stops the old container before the new one
-# polls: two pollers on one token would fight (HTTP 409).
-docker compose up -d bot
+# polls: two pollers on one token would fight (HTTP 409). --force-recreate
+# because the health check below waits for a fresh "polling" line: without it,
+# redeploying the tag already running leaves the container untouched, no new
+# line is logged, and a healthy deploy is reported as failed and rolled back.
+docker compose up -d --force-recreate bot
 
 say "waiting for the bot to say it is polling (up to ${HEALTH_SECONDS}s)"
 for attempt in $(seq 1 $((HEALTH_SECONDS / 3))); do
@@ -77,7 +80,7 @@ if [ -z "$PREVIOUS" ]; then
 fi
 say "rolling back to $PREVIOUS"
 sed -i "s|^PET_MEDS_IMAGE=.*|PET_MEDS_IMAGE=$PREVIOUS|" .env
-docker compose up -d bot
+docker compose up -d --force-recreate bot
 say "rolled back. The failed image was $IMAGE"
 say "note: the secrets were not rolled back; the file this deploy replaced is at $STACK/.env.previous."
 exit 1

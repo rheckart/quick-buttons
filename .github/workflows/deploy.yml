@@ -16,6 +16,17 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      - name: Join the tailnet
+        # SSH on the VPS is reachable over Tailscale, and public port 22 is
+        # closing. The runner joins as tag:ci for this job only; the tailnet
+        # policy lets tag:ci reach tag:vps on tcp:22 and nothing else.
+        uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd # v4.2.0
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          ping: ${{ vars.VPS_TAILNET_ADDR }}
+
       - name: The key and the host it is allowed to reach
         # The host key is a repository VARIABLE, not a secret: a public key is
         # public, and pinning it means a recreated box fails the deploy loudly
@@ -35,7 +46,10 @@ jobs:
       - name: Deploy
         env:
           VPS_HOST: ${{ vars.VPS_HOST }}
+          VPS_TAILNET_ADDR: ${{ vars.VPS_TAILNET_ADDR }}
           TAG: ${{ inputs.tag }}
         run: |
-          ssh -i ~/.ssh/id_deploy -o BatchMode=yes "root@$VPS_HOST" \
-            /docker/pet-meds/deploy.sh "'$TAG'"
+          test -n "$VPS_TAILNET_ADDR" || { echo "set repo variable VPS_TAILNET_ADDR (docs/deploy.md)"; exit 1; }
+          # Over the tailnet; HostKeyAlias keeps the host key pinned under VPS_HOST.
+          ssh -i ~/.ssh/id_deploy -o BatchMode=yes -o HostKeyAlias="$VPS_HOST" \
+            "root@$VPS_TAILNET_ADDR" /docker/pet-meds/deploy.sh "'$TAG'"
