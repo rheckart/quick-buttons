@@ -13,6 +13,14 @@ services:
     image: ${PET_MEDS_IMAGE}
     container_name: pet-meds-bot
     restart: unless-stopped
+    # Hardening (2026-10-26 audit): no privilege escalation, only the
+    # capabilities this service needs, and a ceiling on memory and processes.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 256m
+    pids_limit: 128
     env_file: .env
     environment:
       SETTINGS_PATH: /config/settings.yaml
@@ -21,6 +29,8 @@ services:
       # must be world-readable (chmod 644). Restart the bot to pick up changes.
       - ./settings.yaml:/config/settings.yaml:ro
     networks:
+      # default: Telegram. postgres: the database (an internal network).
+      - default
       - postgres
 
 networks:

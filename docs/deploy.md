@@ -63,7 +63,7 @@ printf '%s\n' 'command="/docker/pet-meds/deploy-ssh.sh",restrict ssh-ed25519 AAA
 docker login ghcr.io -u rheckart
 ```
 
-Postgres: create the bot's own login and database (SQL is in the README, step 4). The compose file joins the docker network named by `POSTGRES_NETWORK` in `.env.tpl` (default `caballus_default`, where the Caballus Postgres is). If your Postgres is elsewhere, change that line and the host in `DATABASE_URL`.
+Postgres: create the bot's own login and database (SQL is in the README, step 4). The compose file joins the docker network named by `POSTGRES_NETWORK` in `.env.tpl` (default `pg-petmeds`: an internal network the Caballus stack creates for this bot alone, so the bot reaches Postgres but not the other stacks, and Postgres has no internet). If your Postgres is elsewhere, change that line and the host in `DATABASE_URL`.
 
 ### 3. Secrets
 
@@ -76,7 +76,7 @@ Pick one.
 ```
 BOT_TOKEN=…
 DATABASE_URL=postgres://pet_meds:PASSWORD@postgres:5432/pet_meds
-POSTGRES_NETWORK=caballus_default
+POSTGRES_NETWORK=pg-petmeds
 REGISTRY_IMAGE=ghcr.io/rheckart/quick-buttons
 PET_MEDS_IMAGE=
 LOG_LEVEL=info

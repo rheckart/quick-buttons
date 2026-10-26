@@ -17,7 +17,7 @@ BOT_TOKEN={{ op://PetMeds/telegram/bot-token }}
 # The bot's own login and database, never a superuser. The host is the Postgres
 # container's name on POSTGRES_NETWORK (the Caballus stack calls it "postgres").
 DATABASE_URL=postgres://pet_meds:{{ op://PetMeds/postgres/password }}@postgres:5432/pet_meds
-POSTGRES_NETWORK=caballus_default
+POSTGRES_NETWORK=pg-petmeds
 
 # --- Image ------------------------------------------------------------------
 REGISTRY_IMAGE=ghcr.io/rheckart/quick-buttons
