@@ -6,7 +6,7 @@ Same shape as Caballus (`github.com/rheckart/caballus`, `docs/deploy.md`): GitHu
 push to main ─► ci.yml: typecheck, build, test ─► image to ghcr.io/rheckart/quick-buttons
                                                    tags: <12-char commit> and latest
 you press  Actions → deploy → Run workflow (tag)
-   └─ SSH (key can ONLY run deploy.sh) ─► /docker/pet-meds/deploy.sh <tag>
+   └─ join tailnet (tag:ci) ─► SSH (key can ONLY run deploy.sh) ─► /docker/pet-meds/deploy.sh <tag>
          render .env from 1Password → docker pull → docker compose up -d bot
          → wait for "polling Telegram as @…" → roll back if it never says it
 ```
@@ -37,6 +37,9 @@ shred -u /tmp/pet-meds-deploy            # the public half (.pub) is used in ste
 # Where to deploy, and the box's public host key (so a swapped-out box fails loudly).
 gh variable set VPS_HOST     --repo rheckart/quick-buttons --body 'your.vps.hostname'
 gh variable set VPS_HOST_KEY --repo rheckart/quick-buttons --body "$(ssh-keyscan -t ed25519 your.vps.hostname 2>/dev/null | grep -v '^#' | cut -d' ' -f2-)"
+# The VPS's Tailscale address. The deploy job joins the tailnet (secrets TS_OAUTH_CLIENT_ID /
+# TS_OAUTH_SECRET: a Tailscale OAuth client, scope Auth Keys: write, tag tag:ci) and SSHes here.
+gh variable set VPS_TAILNET_ADDR --repo rheckart/quick-buttons --body '100.83.238.108'
 # Optional: match pg_dump to your Postgres major version (default 18; a NEWER pg_dump than the server is fine).
 gh variable set PG_MAJOR     --repo rheckart/quick-buttons --body '18'
 ```
@@ -92,8 +95,9 @@ Push to `main`. When `ci` is green, press **deploy** with the 12-character commi
 If GitHub is the thing that is broken, do the same over SSH:
 
 ```bash
-ssh root@your.vps.hostname /docker/pet-meds/deploy.sh <tag>
-# without 1Password:  PET_MEDS_SKIP_ENV_RENDER=1 /docker/pet-meds/deploy.sh <tag>
+ssh caballus sudo /docker/pet-meds/deploy.sh <tag>
+# without 1Password:  ssh caballus sudo PET_MEDS_SKIP_ENV_RENDER=1 /docker/pet-meds/deploy.sh <tag>
+# (root accepts only the forced-command CI key since 2026-10-26; `caballus` is user rob with sudo)
 ```
 
 ## Changing settings or a secret
